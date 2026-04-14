@@ -1,195 +1,257 @@
 /**
  * PriceWatch service worker — event router.
- *
- * Handles:
- *  - install / startup  → sync all alarms
- *  - chrome.alarms      → trigger price check
- *  - chrome.notifications.onClicked → open product URL
- *  - chrome.runtime.onMessage → popup API (CRUD products, manual check, history)
- *  - chrome.storage.onChanged → re-sync alarms if settings change
  */
 
 import { syncAllAlarms, syncAlarm, clearAlarm } from './alarm-manager.js';
-import { checkProduct } from './check-engine.js';
+import { checkProduct, ensureSources } from './check-engine.js';
+import { updateBadge } from './badge-manager.js';
+import { syncDigestAlarm, fireDigest } from './digest.js';
 import { getProducts, getProduct, saveProduct, deleteProduct, getHistory, getSettings, updateSettings } from '../shared/storage.js';
 import { generateId, productIdFromAlarm } from '../shared/utils.js';
-import { MSG, DEFAULT_SETTINGS, STOCK_STATUS } from '../shared/constants.js';
+import { MSG, DEFAULT_SETTINGS, STOCK_STATUS, ALARM_DIGEST } from '../shared/constants.js';
 
-// ── Lifecycle ─────────────────────────────────────────────────────────────
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
 
-globalThis.addEventListener('install', () => {
-  globalThis.skipWaiting();
-});
+globalThis.addEventListener('install', () => { globalThis.skipWaiting(); });
 
 globalThis.addEventListener('activate', (event) => {
   event.waitUntil(
     clients.claim()
       .then(migrateLocalToSync)
       .then(syncAllAlarms)
+      .then(syncDigestAlarm)
+      .then(updateBadge)
   );
 });
 
-chrome.runtime.onStartup.addListener(syncAllAlarms);
-
-/**
- * One-time migration: if products are still in chrome.storage.local
- * under the old "products" key, move them to chrome.storage.sync.
- */
-async function migrateLocalToSync() {
-  const local = await chrome.storage.local.get('products');
-  const oldProducts = local['products'];
-  if (!oldProducts || typeof oldProducts !== 'object') return;
-
-  const entries = Object.values(oldProducts);
-  if (entries.length === 0) return;
-
-  // Write each product to sync under its own key
-  const toSet = {};
-  for (const product of entries) {
-    toSet[`p_${product.id}`] = product;
-  }
-  await chrome.storage.sync.set(toSet);
-  // Remove old key so migration doesn't re-run
-  await chrome.storage.local.remove('products');
-}
-
-// ── Alarms ────────────────────────────────────────────────────────────────
-
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  const productId = productIdFromAlarm(alarm.name);
-  if (productId) {
-    await checkProduct(productId);
-  }
+chrome.runtime.onStartup.addListener(async () => {
+  await syncAllAlarms();
+  await syncDigestAlarm();
+  await updateBadge();
 });
 
-// ── Notification clicks ───────────────────────────────────────────────────
+// ── Alarms ────────────────────────────────────────────────────────────────────
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === ALARM_DIGEST) { await fireDigest(); return; }
+  const productId = productIdFromAlarm(alarm.name);
+  if (productId) await checkProduct(productId);
+});
+
+// ── Notification clicks ───────────────────────────────────────────────────────
 
 chrome.notifications.onClicked.addListener(async (notificationId) => {
-  // Notification IDs are "price_<productId>_<ts>"
   const parts = notificationId.split('_');
   if (parts.length >= 2) {
-    const productId = parts[1];
-    const product = await getProduct(productId);
-    if (product?.url) {
-      await chrome.tabs.create({ url: product.url });
-    }
+    const product = await getProduct(parts[1]);
+    if (product?.url) await chrome.tabs.create({ url: product.canonicalUrl ?? product.url });
   }
   chrome.notifications.clear(notificationId);
 });
 
-// ── Popup message API ─────────────────────────────────────────────────────
+// ── Messages ──────────────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  // Picker result: stash selector in storage so popup reads it on next open
   if (msg.type === MSG.PICKER_RESULT) {
-    if (msg.selector) {
-      chrome.storage.local.set({ _pickerResult: msg.selector });
-    }
+    if (msg.selector) chrome.storage.local.set({ _pickerResult: msg.selector });
     sendResponse({ ok: true });
     return true;
   }
-  handleMessage(msg).then(sendResponse).catch((err) => {
-    sendResponse({ error: err.message });
-  });
-  return true; // async
+  handleMessage(msg).then(sendResponse).catch((err) => sendResponse({ error: err.message }));
+  return true;
 });
 
 async function handleMessage(msg) {
   switch (msg.type) {
-    case MSG.GET_PRODUCTS: {
-      const products = await getProducts();
-      return { products };
-    }
-
-    case MSG.ADD_PRODUCT: {
-      const { data } = msg;
-      const product = {
-        id: generateId(),
-        url: data.url,
-        name: data.name,
-        targetPrice: data.targetPrice ?? null,
-        currency: data.currency ?? DEFAULT_SETTINGS.defaultCurrency,
-        intervalMinutes: data.intervalMinutes ?? DEFAULT_SETTINGS.defaultInterval,
-        enabled: true,
-        selectors: { price: data.priceSelector ?? null, stock: null },
-        requiresTabExtraction: false,
-        currentPrice: null,
-        currentStock: STOCK_STATUS.UNKNOWN,
-        lastChecked: null,
-        lastNotified: null,
-        consecutiveErrors: 0,
-        consecutiveNulls: 0,
-        createdAt: Date.now(),
-      };
-      await saveProduct(product);
-      await syncAlarm(product);
-      // Kick off an immediate check
-      checkProduct(product.id);
-      return { product };
-    }
-
-    case MSG.UPDATE_PRODUCT: {
-      const existing = await getProduct(msg.id);
-      if (!existing) return { error: 'Product not found' };
-      const updated = { ...existing, ...msg.data };
-      await saveProduct(updated);
-      await syncAlarm(updated);
-      return { product: updated };
-    }
-
-    case MSG.DELETE_PRODUCT: {
-      await clearAlarm(msg.id);
-      await deleteProduct(msg.id);
-      return { ok: true };
-    }
-
-    case MSG.CHECK_NOW: {
-      const product = await getProduct(msg.id);
-      if (!product) return { error: 'Product not found' };
-      // Clear cooldown so a manual check always notifies if below target
-      await saveProduct({ ...product, lastNotified: null });
-      await checkProduct(msg.id);
-      return { ok: true };
-    }
-
-    case MSG.GET_HISTORY: {
-      const points = await getHistory(msg.id);
-      return { points };
-    }
-
-    case MSG.GET_SETTINGS: {
-      const settings = await getSettings();
-      return { settings };
-    }
-
+    case MSG.GET_PRODUCTS:    return { products: await getProducts() };
+    case MSG.ADD_PRODUCT:     return handleAddProduct(msg.data);
+    case MSG.UPDATE_PRODUCT:  return handleUpdateProduct(msg.id, msg.data);
+    case MSG.DELETE_PRODUCT:  return handleDeleteProduct(msg.id);
+    case MSG.CHECK_NOW:       return handleCheckNow(msg.id);
+    case MSG.PAUSE_ALL:       return handlePauseAll();
+    case MSG.RESUME_ALL:      return handleResumeAll();
+    case MSG.IMPORT_URLS:     return handleImportUrls(msg.urls);
+    case MSG.ADD_SOURCE:      return handleAddSource(msg.productId, msg.url);
+    case MSG.REMOVE_SOURCE:   return handleRemoveSource(msg.productId, msg.sourceId);
+    case MSG.GET_HISTORY:     return { points: await getHistory(msg.id) };
+    case MSG.GET_SETTINGS:    return { settings: await getSettings() };
     case MSG.UPDATE_SETTINGS: {
       const settings = await updateSettings(msg.data);
-      // Re-sync all alarms in case defaultInterval changed
       await syncAllAlarms();
+      await syncDigestAlarm();
       return { settings };
     }
-
-    default:
-      return { error: `Unknown message type: ${msg.type}` };
+    default: return { error: `Unknown message type: ${msg.type}` };
   }
 }
 
-// ── Storage change listener — re-sync alarms if a product's interval changed ──
+// ── Message handlers ──────────────────────────────────────────────────────────
+
+async function handleAddProduct(data) {
+  const existing = await getProducts();
+  const duplicate = Object.values(existing).find((p) => p.url === data.url || p.canonicalUrl === data.url);
+  if (duplicate) return { error: 'already_tracked', product: duplicate };
+
+  const product = {
+    id: generateId(),
+    url: data.url, canonicalUrl: null, name: data.name, thumbnail: null,
+    targetPrice: data.targetPrice ?? null, sellThreshold: data.sellThreshold ?? null,
+    currency: data.currency ?? DEFAULT_SETTINGS.defaultCurrency,
+    intervalMinutes: data.intervalMinutes ?? DEFAULT_SETTINGS.defaultInterval,
+    enabled: true, notificationEnabled: data.notificationEnabled !== false,
+    stockOnly: data.stockOnly ?? false,
+    selectors: { price: data.priceSelector ?? null, stock: null },
+    requiresTabExtraction: false, sources: [], bestSourceId: null,
+    currentPrice: null, currentStock: STOCK_STATUS.UNKNOWN,
+    initialPrice: null, lowestPrice: null, highestPrice: null,
+    lastChecked: null, lastNotified: null,
+    consecutiveErrors: 0, consecutiveNulls: 0,
+    sortOrder: Date.now(), createdAt: Date.now(),
+  };
+  await saveProduct(product);
+  await syncAlarm(product);
+  checkProduct(product.id);
+  return { product };
+}
+
+async function handleUpdateProduct(id, data) {
+  const existing = await getProduct(id);
+  if (!existing) return { error: 'Product not found' };
+  const updated = { ...existing, ...data };
+  await saveProduct(updated);
+  await syncAlarm(updated);
+  await updateBadge();
+  return { product: updated };
+}
+
+async function handleDeleteProduct(id) {
+  await clearAlarm(id);
+  await deleteProduct(id);
+  await updateBadge();
+  return { ok: true };
+}
+
+async function handleCheckNow(id) {
+  const product = await getProduct(id);
+  if (!product) return { error: 'Product not found' };
+  await saveProduct({ ...product, lastNotified: null });
+  await checkProduct(id);
+  return { ok: true };
+}
+
+async function handlePauseAll() {
+  const products = await getProducts();
+  await Promise.all(Object.values(products).map(async (p) => {
+    await saveProduct({ ...p, enabled: false });
+    await clearAlarm(p.id);
+  }));
+  await updateBadge();
+  return { ok: true };
+}
+
+async function handleResumeAll() {
+  const products = await getProducts();
+  await Promise.all(Object.values(products).map(async (p) => {
+    const resumed = { ...p, enabled: true };
+    await saveProduct(resumed);
+    await syncAlarm(resumed);
+  }));
+  await updateBadge();
+  return { ok: true };
+}
+
+async function handleImportUrls(urls) {
+  const existing = await getProducts();
+  const existingUrls = new Set(Object.values(existing).flatMap((p) => [p.url, p.canonicalUrl].filter(Boolean)));
+  const settings = await getSettings();
+  const added = [];
+  for (const url of urls) {
+    if (existingUrls.has(url)) continue;
+    const product = {
+      id: generateId(), url, canonicalUrl: null, name: hostnameOf(url),
+      thumbnail: null, targetPrice: null, sellThreshold: null,
+      currency: settings.defaultCurrency, intervalMinutes: settings.defaultInterval,
+      enabled: true, notificationEnabled: true, stockOnly: false,
+      selectors: { price: null, stock: null }, requiresTabExtraction: false,
+      sources: [], bestSourceId: null,
+      currentPrice: null, currentStock: STOCK_STATUS.UNKNOWN,
+      initialPrice: null, lowestPrice: null, highestPrice: null,
+      lastChecked: null, lastNotified: null,
+      consecutiveErrors: 0, consecutiveNulls: 0,
+      sortOrder: Date.now(), createdAt: Date.now(),
+    };
+    await saveProduct(product);
+    await syncAlarm(product);
+    checkProduct(product.id);
+    added.push(product);
+    existingUrls.add(url);
+  }
+  return { added: added.length };
+}
+
+async function handleAddSource(productId, url) {
+  const product = await getProduct(productId);
+  if (!product) return { error: 'Product not found' };
+  const withSources = ensureSources(product);
+  if (withSources.sources.some((s) => s.url === url)) return { error: 'already_added' };
+  const newSource = {
+    id: generateId(), url, canonicalUrl: null, label: hostnameOf(url),
+    selectors: { price: null }, requiresTabExtraction: false,
+    currentPrice: null, currentStock: STOCK_STATUS.UNKNOWN,
+    currency: null, thumbnail: null, lastChecked: null,
+    consecutiveErrors: 0, consecutiveNulls: 0,
+  };
+  const updated = { ...withSources, sources: [...withSources.sources, newSource] };
+  await saveProduct(updated);
+  checkProduct(productId);
+  return { product: updated };
+}
+
+async function handleRemoveSource(productId, sourceId) {
+  const product = await getProduct(productId);
+  if (!product) return { error: 'Product not found' };
+  if ((product.sources?.length ?? 0) <= 1) return { error: 'last_source' };
+  const sources = (product.sources ?? []).filter((s) => s.id !== sourceId);
+  const updated = {
+    ...product, sources,
+    url: sources[0]?.url ?? product.url,
+    bestSourceId: product.bestSourceId === sourceId ? null : product.bestSourceId,
+  };
+  await saveProduct(updated);
+  return { product: updated };
+}
+
+function hostnameOf(url) {
+  try { return new URL(url).hostname; } catch { return url; }
+}
+
+// ── Storage sync listener ─────────────────────────────────────────────────────
 
 chrome.storage.onChanged.addListener(async (changes, area) => {
   if (area !== 'sync') return;
   for (const [key, { newValue, oldValue }] of Object.entries(changes)) {
     if (!key.startsWith('p_')) continue;
     if (newValue) {
-      // Product added or updated — re-sync alarm if interval/enabled changed
       const old = oldValue;
       if (!old || old.intervalMinutes !== newValue.intervalMinutes || old.enabled !== newValue.enabled) {
         await syncAlarm(newValue);
       }
     } else {
-      // Product deleted — clear its alarm
-      const productId = key.slice(2); // strip "p_"
-      await clearAlarm(productId);
+      await clearAlarm(key.slice(2));
     }
   }
 });
+
+// ── Migration ─────────────────────────────────────────────────────────────────
+
+async function migrateLocalToSync() {
+  const local = await chrome.storage.local.get('products');
+  const oldProducts = local['products'];
+  if (!oldProducts || typeof oldProducts !== 'object') return;
+  const entries = Object.values(oldProducts);
+  if (entries.length === 0) return;
+  const toSet = {};
+  for (const product of entries) toSet[`p_${product.id}`] = product;
+  await chrome.storage.sync.set(toSet);
+  await chrome.storage.local.remove('products');
+}

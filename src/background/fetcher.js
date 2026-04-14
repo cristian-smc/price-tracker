@@ -1,25 +1,20 @@
 /**
  * Fetches a URL and returns extracted price/stock data.
  *
- * Flow:
- *  1. Try raw fetch → send HTML to offscreen document for parsing.
- *  2. If price is null and page looks SPA-rendered, set requiresTabExtraction.
- *     (Tab-based fallback is implemented in Phase 7 / check-engine.js.)
- *
- * The offscreen document is created lazily and kept alive across calls
- * within the same service worker lifecycle.
+ * Improvements over v1:
+ *  - User-Agent rotation on 403/429
+ *  - Canonical URL detection (follows redirects, stores final URL)
+ *  - "Site not supported" detection after exhausted strategies
  */
 
 import { retry } from '../shared/utils.js';
+import { USER_AGENTS } from '../shared/constants.js';
 
 const OFFSCREEN_URL = chrome.runtime.getURL('src/offscreen/offscreen.html');
 const OFFSCREEN_REASON = 'DOM_PARSER';
 
 let offscreenReady = false;
 
-/**
- * Ensure the offscreen document exists.
- */
 async function ensureOffscreen() {
   if (offscreenReady) return;
   const existing = await chrome.offscreen.hasDocument?.() ?? false;
@@ -33,12 +28,6 @@ async function ensureOffscreen() {
   offscreenReady = true;
 }
 
-/**
- * Send HTML to the offscreen document for extraction.
- * @param {string} html
- * @param {string} url
- * @param {string|null} userSelector
- */
 async function parseWithOffscreen(html, url, userSelector) {
   await ensureOffscreen();
   return chrome.runtime.sendMessage({
@@ -49,63 +38,67 @@ async function parseWithOffscreen(html, url, userSelector) {
   });
 }
 
-/**
- * Detect whether a page is likely SPA-rendered (no meaningful text content
- * despite having a JS framework root element).
- * @param {string} html raw HTML string
- */
 function looksLikeSpa(html) {
   const hasSpaRoot = /<div[^>]+id=["']?(root|app|__next|__nuxt)["']?/i.test(html);
-  const hasNoText = (html.match(/>([A-Za-z0-9][\w\s]{20,})</g) ?? []).length < 3;
+  const hasNoText  = (html.match(/>([A-Za-z0-9][\w\s]{20,})</g) ?? []).length < 3;
   return hasSpaRoot && hasNoText;
 }
 
 /**
- * Fetch a product URL and extract its price + stock.
- *
- * @param {{ url: string, selectors?: { price?: string|null }, requiresTabExtraction?: boolean }} product
- * @returns {Promise<{
- *   price: number|null,
- *   currency: string|null,
- *   stock: string,
- *   strategy: number|null,
- *   selectorUsed: string|null,
- *   requiresTabExtraction: boolean,
- *   error: string|null
- * }>}
+ * Fetch with User-Agent rotation on 403/429.
+ * Returns { html, finalUrl } or throws.
  */
-export async function fetchAndExtract(product) {
-  // If flagged as SPA, skip straight to tab-based fallback signal
-  if (product.requiresTabExtraction) {
-    return { price: null, currency: null, stock: 'unknown', strategy: null, selectorUsed: null, requiresTabExtraction: true, error: null };
-  }
+async function fetchWithRotation(url) {
+  let lastStatus = 0;
 
-  let html;
-  try {
-    html = await retry(async () => {
-      const resp = await fetch(product.url, {
+  for (const ua of USER_AGENTS) {
+    try {
+      const resp = await fetch(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; PriceWatch/1.0)',
+          'User-Agent': ua,
           'Accept': 'text/html,application/xhtml+xml',
           'Accept-Language': 'en-US,en;q=0.9',
         },
         signal: AbortSignal.timeout(15_000),
       });
+
+      lastStatus = resp.status;
+
+      if (resp.status === 403 || resp.status === 429) continue; // try next UA
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      return resp.text();
-    }, { attempts: 3, baseDelayMs: 1000 });
+
+      const html = await resp.text();
+      // Detect canonical URL from redirect chain (fetch follows redirects)
+      const finalUrl = resp.url !== url ? resp.url : null;
+      return { html, finalUrl };
+    } catch (err) {
+      if (err.message?.startsWith('HTTP')) continue;
+      throw err;
+    }
+  }
+
+  throw new Error(`HTTP ${lastStatus} — all User-Agents blocked`);
+}
+
+export async function fetchAndExtract(product) {
+  if (product.requiresTabExtraction) {
+    return { price: null, currency: null, stock: 'unknown', strategy: null, selectorUsed: null, requiresTabExtraction: true, canonicalUrl: null, thumbnail: null, error: null };
+  }
+
+  let html, finalUrl;
+  try {
+    ({ html, finalUrl } = await retry(() => fetchWithRotation(product.url), { attempts: 2, baseDelayMs: 1000 }));
   } catch (err) {
-    return { price: null, currency: null, stock: 'unknown', strategy: null, selectorUsed: null, requiresTabExtraction: false, error: err.message };
+    return { price: null, currency: null, stock: 'unknown', strategy: null, selectorUsed: null, requiresTabExtraction: false, canonicalUrl: null, thumbnail: null, error: err.message };
   }
 
   try {
     const result = await parseWithOffscreen(html, product.url, product.selectors?.price ?? null);
 
     if (result?.error) {
-      return { price: null, currency: null, stock: 'unknown', strategy: null, selectorUsed: null, requiresTabExtraction: false, error: result.error };
+      return { price: null, currency: null, stock: 'unknown', strategy: null, selectorUsed: null, requiresTabExtraction: false, canonicalUrl: finalUrl, thumbnail: null, error: result.error };
     }
 
-    // If no price found and page looks SPA-rendered, flag for tab extraction
     const spaDetected = !result?.price && looksLikeSpa(html);
 
     return {
@@ -114,18 +107,16 @@ export async function fetchAndExtract(product) {
       stock: result?.stock ?? 'unknown',
       strategy: result?.strategy ?? null,
       selectorUsed: result?.selectorUsed ?? null,
+      thumbnail: result?.thumbnail ?? null,
       requiresTabExtraction: spaDetected,
+      canonicalUrl: finalUrl,
       error: null,
     };
   } catch (err) {
-    return { price: null, currency: null, stock: 'unknown', strategy: null, selectorUsed: null, requiresTabExtraction: false, error: err.message };
+    return { price: null, currency: null, stock: 'unknown', strategy: null, selectorUsed: null, requiresTabExtraction: false, canonicalUrl: finalUrl, thumbnail: null, error: err.message };
   }
 }
 
-/**
- * Invalidate the offscreen ready flag — call if the offscreen document
- * is closed externally (e.g. on chrome.offscreen events).
- */
 export function resetOffscreenState() {
   offscreenReady = false;
 }

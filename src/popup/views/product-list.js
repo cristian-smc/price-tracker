@@ -1,93 +1,271 @@
 /**
  * Product list view — renders tracked products as clickable cards.
- * @param {Record<string, import('../../shared/types').Product>} products
- * @param {{ onSelect: (id:string)=>void, onAdd: ()=>void }} handlers
- * @returns {HTMLElement}
+ * Supports: thumbnail, % change badge, search, sort, filter, drag-reorder,
+ *           pause-all / resume-all.
  */
 
 import { displayPrice, createStockBadge, createWarningBadge } from '../components/currency-badge.js';
 
-export function renderProductList(products, { onSelect, onAdd }) {
+/**
+ * @param {Record<string, import('../../shared/types').Product>} products
+ * @param {{
+ *   onSelect: (id:string) => void,
+ *   onAdd: () => void,
+ *   onPauseAll: () => void,
+ *   onResumeAll: () => void,
+ *   onReorder: (id:string, newOrder:number) => void,
+ *   sortBy?: string,
+ *   filterBy?: string,
+ * }} handlers
+ */
+export function renderProductList(products, {
+  onSelect, onAdd, onPauseAll, onResumeAll, onReorder,
+  sortBy = 'created', filterBy = 'all',
+}) {
   const entries = Object.values(products);
 
+  const wrap = document.createElement('div');
+
   if (entries.length === 0) {
-    const wrap = document.createElement('div');
-    wrap.className = 'empty';
-    wrap.innerHTML = `
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path stroke-linecap="round" stroke-linejoin="round"
           d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19V5a2 2 0 012-2h12a2 2 0 012 2v14"/>
       </svg>
       <p>No products tracked yet.<br>Click <strong>+</strong> to add one.</p>
     `;
+    wrap.appendChild(empty);
     return wrap;
   }
 
-  const list = document.createElement('div');
-  list.className = 'product-list';
+  // ── Search bar ─────────────────────────────────────────────────────────────
+  const searchBar = document.createElement('div');
+  searchBar.className = 'search-bar';
 
-  for (const p of entries.toSorted((a, b) => b.createdAt - a.createdAt)) {
-    const card = document.createElement('div');
-    card.className = 'product-card';
-    card.setAttribute('role', 'button');
-    card.setAttribute('tabindex', '0');
+  const searchInput = document.createElement('input');
+  searchInput.type = 'search';
+  searchInput.placeholder = 'Search…';
+  searchInput.setAttribute('aria-label', 'Search products');
 
-    const priceStr = displayPrice(p.currentPrice, p.currency);
-    const isPriceDrop = p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice;
-
-    // Row 1: name + price
-    const row1 = document.createElement('div');
-    row1.className = 'row1';
-
-    const nameEl = document.createElement('span');
-    nameEl.className = 'name';
-    nameEl.textContent = p.name;
-    nameEl.title = p.name;
-
-    const priceEl = document.createElement('span');
-    priceEl.className = 'price' + (isPriceDrop ? ' drop' : '');
-    priceEl.textContent = priceStr;
-
-    row1.appendChild(nameEl);
-    row1.appendChild(priceEl);
-
-    // Row 2: stock badge + last checked + warning badges
-    const row2 = document.createElement('div');
-    row2.className = 'row2';
-
-    row2.appendChild(createStockBadge(p.currentStock ?? 'unknown'));
-
-    if (p.targetPrice !== null) {
-      const target = document.createElement('span');
-      target.title = 'Target price';
-      target.textContent = `↓ ${displayPrice(p.targetPrice, p.currency)}`;
-      target.style.color = isPriceDrop ? 'var(--success)' : 'var(--text-muted)';
-      row2.appendChild(target);
-    }
-
-    if (p.lastChecked) {
-      const when = document.createElement('span');
-      when.textContent = formatRelativeTime(p.lastChecked);
-      row2.appendChild(when);
-    }
-
-    if (p.consecutiveErrors >= 3) {
-      row2.appendChild(createWarningBadge('error', p.consecutiveErrors));
-    } else if (p.consecutiveNulls >= 2) {
-      row2.appendChild(createWarningBadge('drift', p.consecutiveNulls));
-    }
-
-    card.appendChild(row1);
-    card.appendChild(row2);
-
-    const select = () => onSelect(p.id);
-    card.addEventListener('click', select);
-    card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') select(); });
-
-    list.appendChild(card);
+  const sortSelect = document.createElement('select');
+  sortSelect.setAttribute('aria-label', 'Sort by');
+  for (const [val, label] of [['created','Newest'],['name','Name'],['price','Price'],['last_checked','Last checked']]) {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = label;
+    if (val === sortBy) opt.selected = true;
+    sortSelect.appendChild(opt);
   }
 
-  return list;
+  const filterSelect = document.createElement('select');
+  filterSelect.setAttribute('aria-label', 'Filter');
+  for (const [val, label] of [['all','All'],['active','Active'],['paused','Paused'],['drop','Below target']]) {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = label;
+    if (val === filterBy) opt.selected = true;
+    filterSelect.appendChild(opt);
+  }
+
+  searchBar.appendChild(searchInput);
+  searchBar.appendChild(sortSelect);
+  searchBar.appendChild(filterSelect);
+  wrap.appendChild(searchBar);
+
+  // ── Toolbar ────────────────────────────────────────────────────────────────
+  const toolbar = document.createElement('div');
+  toolbar.className = 'list-toolbar';
+
+  const pauseAllBtn = document.createElement('button');
+  pauseAllBtn.className = 'btn-sm';
+  pauseAllBtn.type = 'button';
+  pauseAllBtn.textContent = 'Pause all';
+  pauseAllBtn.addEventListener('click', onPauseAll);
+
+  const resumeAllBtn = document.createElement('button');
+  resumeAllBtn.className = 'btn-sm';
+  resumeAllBtn.type = 'button';
+  resumeAllBtn.textContent = 'Resume all';
+  resumeAllBtn.addEventListener('click', onResumeAll);
+
+  const spacer = document.createElement('div');
+  spacer.className = 'spacer';
+
+  toolbar.appendChild(pauseAllBtn);
+  toolbar.appendChild(resumeAllBtn);
+  toolbar.appendChild(spacer);
+  wrap.appendChild(toolbar);
+
+  // ── List ───────────────────────────────────────────────────────────────────
+  const list = document.createElement('div');
+  list.className = 'product-list';
+  wrap.appendChild(list);
+
+  // Reactive render on search/sort/filter changes
+  const renderList = () => {
+    list.innerHTML = '';
+    const query = searchInput.value.toLowerCase();
+    const sort  = sortSelect.value;
+    const filter = filterSelect.value;
+
+    let filtered = entries.filter((p) => {
+      if (query && !p.name.toLowerCase().includes(query) && !p.url.toLowerCase().includes(query)) return false;
+      if (filter === 'active') return p.enabled;
+      if (filter === 'paused') return !p.enabled;
+      if (filter === 'drop') return p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice;
+      return true;
+    });
+
+    filtered.sort((a, b) => {
+      if (sort === 'name') return a.name.localeCompare(b.name);
+      if (sort === 'price') return (a.currentPrice ?? Infinity) - (b.currentPrice ?? Infinity);
+      if (sort === 'last_checked') return (b.lastChecked ?? 0) - (a.lastChecked ?? 0);
+      if (sort === 'manual') return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+      return b.createdAt - a.createdAt; // default: newest first
+    });
+
+    for (const p of filtered) {
+      list.appendChild(buildCard(p, onSelect, onReorder));
+    }
+  };
+
+  searchInput.addEventListener('input', renderList);
+  sortSelect.addEventListener('change', renderList);
+  filterSelect.addEventListener('change', renderList);
+
+  renderList();
+  return wrap;
+}
+
+function buildCard(p, onSelect, onReorder) {
+  const card = document.createElement('div');
+  card.className = 'product-card' + (p.enabled ? '' : ' paused');
+  card.setAttribute('role', 'button');
+  card.setAttribute('tabindex', '0');
+  card.dataset.id = p.id;
+
+  const inner = document.createElement('div');
+  inner.className = 'card-inner';
+
+  // Thumbnail
+  if (p.thumbnail) {
+    const img = document.createElement('img');
+    img.className = 'thumb';
+    img.src = p.thumbnail;
+    img.alt = '';
+    img.loading = 'lazy';
+    inner.appendChild(img);
+  }
+
+  const body = document.createElement('div');
+  body.className = 'card-body';
+
+  const isPriceDrop = p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice;
+  const priceStr = displayPrice(p.currentPrice, p.currency);
+
+  // Row 1: name + price
+  const row1 = document.createElement('div');
+  row1.className = 'row1';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'name';
+  nameEl.textContent = p.name;
+  nameEl.title = p.name;
+
+  const priceEl = document.createElement('span');
+  priceEl.className = 'price' + (isPriceDrop ? ' drop' : '');
+  priceEl.textContent = priceStr;
+
+  row1.appendChild(nameEl);
+  row1.appendChild(priceEl);
+  body.appendChild(row1);
+
+  // Row 2: badges + meta
+  const row2 = document.createElement('div');
+  row2.className = 'row2';
+
+  row2.appendChild(createStockBadge(p.currentStock ?? 'unknown'));
+
+  // % change from initial price
+  if (p.initialPrice != null && p.currentPrice != null && p.initialPrice !== 0) {
+    const pct = ((p.currentPrice - p.initialPrice) / p.initialPrice) * 100;
+    const pctBadge = document.createElement('span');
+    pctBadge.className = 'badge ' + (pct < -0.5 ? 'pct-down' : pct > 0.5 ? 'pct-up' : 'pct-same');
+    pctBadge.textContent = (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
+    pctBadge.title = 'Change since first tracked';
+    row2.appendChild(pctBadge);
+  }
+
+  if (p.targetPrice !== null) {
+    const target = document.createElement('span');
+    target.title = 'Target price';
+    target.textContent = `↓ ${displayPrice(p.targetPrice, p.currency)}`;
+    target.style.color = isPriceDrop ? 'var(--success)' : 'var(--text-muted)';
+    row2.appendChild(target);
+  }
+
+  if (p.lastChecked) {
+    const when = document.createElement('span');
+    when.textContent = formatRelativeTime(p.lastChecked);
+    row2.appendChild(when);
+  }
+
+  if (p.consecutiveErrors >= 3) {
+    row2.appendChild(createWarningBadge('error', p.consecutiveErrors));
+  } else if (p.consecutiveNulls >= 2) {
+    row2.appendChild(createWarningBadge('drift', p.consecutiveNulls));
+  }
+
+  body.appendChild(row2);
+  inner.appendChild(body);
+
+  // Drag handle
+  const handle = document.createElement('div');
+  handle.className = 'drag-handle';
+  handle.title = 'Drag to reorder';
+  handle.innerHTML = `<svg viewBox="0 0 12 16" fill="currentColor"><circle cx="4" cy="4" r="1.2"/><circle cx="8" cy="4" r="1.2"/><circle cx="4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="4" cy="12" r="1.2"/><circle cx="8" cy="12" r="1.2"/></svg>`;
+  handle.addEventListener('mousedown', (e) => {
+    // Only initiate drag from handle
+    card.setAttribute('draggable', 'true');
+    e.stopPropagation();
+  });
+
+  card.appendChild(inner);
+  card.appendChild(handle);
+
+  // Click/keyboard to select
+  const select = () => onSelect(p.id);
+  card.addEventListener('click', select);
+  card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') select(); });
+
+  // Drag events for reordering
+  card.addEventListener('dragstart', (e) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', p.id);
+    card.classList.add('dragging');
+  });
+  card.addEventListener('dragend', () => {
+    card.setAttribute('draggable', 'false');
+    card.classList.remove('dragging');
+    document.querySelectorAll('.product-card.drag-over').forEach((el) => el.classList.remove('drag-over'));
+  });
+  card.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    card.classList.add('drag-over');
+  });
+  card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+  card.addEventListener('drop', (e) => {
+    e.preventDefault();
+    card.classList.remove('drag-over');
+    const draggedId = e.dataTransfer.getData('text/plain');
+    if (draggedId && draggedId !== p.id) {
+      // Move dragged item to just before this card's sortOrder
+      onReorder(draggedId, (p.sortOrder ?? p.createdAt) - 1);
+    }
+  });
+
+  return card;
 }
 
 function formatRelativeTime(ts) {

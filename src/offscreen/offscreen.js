@@ -15,11 +15,12 @@ import { parsePrice } from '../shared/currency.js';
 import { HEURISTIC_SELECTORS, STOCK_SELECTORS, STOCK_STATUS } from '../shared/constants.js';
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'PLAY_SOUND') { playBeep(); sendResponse({ ok: true }); return true; }
   if (msg.type !== 'PARSE_HTML') return false;
   handleParse(msg).then(sendResponse).catch((err) => {
     sendResponse({ error: err.message });
   });
-  return true; // keep channel open for async reply
+  return true;
 });
 
 /**
@@ -27,34 +28,56 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
  */
 async function handleParse({ html, url, userSelector }) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
+  const thumbnail = extractThumbnail(doc);
 
   // ── Strategy 1: User-defined selector ─────────────────────────────────────
   if (userSelector) {
     const result = trySelector(doc, userSelector);
-    if (result) return { ...result, strategy: 1, selectorUsed: userSelector };
+    if (result) return { ...result, strategy: 1, selectorUsed: userSelector, thumbnail };
   }
 
   // ── Strategy 2: JSON-LD ───────────────────────────────────────────────────
   const jsonLd = tryJsonLd(doc);
-  if (jsonLd) return { ...jsonLd, strategy: 2, selectorUsed: 'json-ld' };
+  if (jsonLd) return { ...jsonLd, strategy: 2, selectorUsed: 'json-ld', thumbnail };
 
   // ── Strategy 3: Open Graph ────────────────────────────────────────────────
   const og = tryOpenGraph(doc);
-  if (og) return { ...og, strategy: 3, selectorUsed: 'og:price' };
+  if (og) return { ...og, strategy: 3, selectorUsed: 'og:price', thumbnail };
 
   // ── Strategy 4: Heuristic selectors ──────────────────────────────────────
   for (const sel of HEURISTIC_SELECTORS) {
     const result = trySelector(doc, sel);
-    if (result) return { ...result, strategy: 4, selectorUsed: sel };
+    if (result) return { ...result, strategy: 4, selectorUsed: sel, thumbnail };
   }
 
   // ── Strategy 5: Stock-only (add-to-cart presence) ────────────────────────
   const stock = detectStock(doc);
   if (stock !== STOCK_STATUS.UNKNOWN) {
-    return { price: null, currency: null, stock, strategy: 5, selectorUsed: null };
+    return { price: null, currency: null, stock, strategy: 5, selectorUsed: null, thumbnail };
   }
 
-  return { price: null, currency: null, stock: STOCK_STATUS.UNKNOWN, strategy: null, selectorUsed: null };
+  return { price: null, currency: null, stock: STOCK_STATUS.UNKNOWN, strategy: null, selectorUsed: null, thumbnail };
+}
+
+function extractThumbnail(doc) {
+  return doc.querySelector('meta[property="og:image"]')?.getAttribute('content')
+    ?? doc.querySelector('meta[name="twitter:image"]')?.getAttribute('content')
+    ?? null;
+}
+
+function playBeep() {
+  const ctx = new AudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.frequency.value = 880;
+  osc.type = 'sine';
+  gain.gain.setValueAtTime(0.3, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.4);
+  osc.onended = () => ctx.close();
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

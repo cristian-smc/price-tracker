@@ -10,7 +10,7 @@ import { renderProductDetail } from './views/product-detail.js';
 
 const container = document.getElementById('view-container');
 const notifBanner = document.getElementById('notif-banner');
-let currentAddProductView = null; // holds the rendered add/edit DOM node
+let currentAddProductView = null;
 
 // ── Messaging helpers ─────────────────────────────────────────────────────
 
@@ -18,10 +18,22 @@ function send(msg) {
   return chrome.runtime.sendMessage(msg);
 }
 
+// ── Theme ─────────────────────────────────────────────────────────────────
+
+async function applyTheme() {
+  const { settings } = await send({ type: MSG.GET_SETTINGS });
+  const theme = settings?.theme ?? 'auto';
+  if (theme === 'auto') {
+    delete document.documentElement.dataset.theme;
+  } else {
+    document.documentElement.dataset.theme = theme;
+  }
+}
+
 // ── Notification permission check ─────────────────────────────────────────
 
 async function checkNotifPermission() {
-  if (!('Notification' in window)) return;
+  if (!('Notification' in globalThis)) return;
   const perm = await chrome.permissions.contains({ permissions: ['notifications'] }).catch(() => true);
   if (perm && Notification.permission === 'denied') {
     notifBanner.classList.remove('hidden');
@@ -37,10 +49,27 @@ document.getElementById('notif-link')?.addEventListener('click', (e) => {
 
 async function showList() {
   currentAddProductView = null;
-  const { products } = await send({ type: MSG.GET_PRODUCTS });
+  const [{ products }, { settings }] = await Promise.all([
+    send({ type: MSG.GET_PRODUCTS }),
+    send({ type: MSG.GET_SETTINGS }),
+  ]);
   const view = renderProductList(products ?? {}, {
     onSelect: showDetail,
     onAdd: showAdd,
+    onPauseAll: async () => {
+      await send({ type: MSG.PAUSE_ALL });
+      showList();
+    },
+    onResumeAll: async () => {
+      await send({ type: MSG.RESUME_ALL });
+      showList();
+    },
+    onReorder: async (id, newOrder) => {
+      await send({ type: MSG.UPDATE_PRODUCT, id, data: { sortOrder: newOrder } });
+      showList();
+    },
+    sortBy: settings?.sortBy ?? 'created',
+    filterBy: settings?.filterBy ?? 'all',
   });
   setView(view);
 }
@@ -66,12 +95,22 @@ async function showDetail(productId) {
     },
     onCheckNow: async (id) => {
       await send({ type: MSG.CHECK_NOW, id });
-      // Refresh detail after short delay to show new price
       setTimeout(() => showDetail(id), 2000);
     },
     onToggleEnabled: async (id, enabled) => {
       await send({ type: MSG.UPDATE_PRODUCT, id, data: { enabled } });
       showDetail(id);
+    },
+    onToggleNotification: async (id, notificationEnabled) => {
+      await send({ type: MSG.UPDATE_PRODUCT, id, data: { notificationEnabled } });
+    },
+    onAddSource: async (productId, url) => {
+      await send({ type: MSG.ADD_SOURCE, productId, url });
+      showDetail(productId);
+    },
+    onRemoveSource: async (productId, sourceId) => {
+      await send({ type: MSG.REMOVE_SOURCE, productId, sourceId });
+      showDetail(productId);
     },
   });
   setView(view);
@@ -116,18 +155,15 @@ function showEdit(product) {
 // ── Element picker ────────────────────────────────────────────────────────
 
 async function startPicker() {
-  // Inject picker content script into the active tab
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return;
   await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     files: ['src/content/picker.js'],
   });
-  // Close popup so picker overlay is visible
   window.close();
 }
 
-// Receive the selector chosen by the picker
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === MSG.PICKER_RESULT && currentAddProductView?._selectorInput) {
     currentAddProductView._selectorInput.value = msg.selector;
@@ -150,9 +186,9 @@ function setView(el) {
 
 // ── Init ──────────────────────────────────────────────────────────────────
 
-checkNotifPermission();
+await checkNotifPermission();
+await applyTheme();
 
-// If the picker just ran, reopen the add form with the captured selector
 const { _pickerResult } = await chrome.storage.local.get('_pickerResult');
 if (_pickerResult) {
   await chrome.storage.local.remove('_pickerResult');

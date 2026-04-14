@@ -2,7 +2,10 @@
  * Add / Edit product form view.
  *
  * @param {{
- *   product?: import('../../shared/types').Product,  // null = add mode
+ *   product?: import('../../shared/types').Product,
+ *   prefillSelector?: string|null,
+ *   prefillUrl?: string,
+ *   prefillName?: string,
  *   onSave: (data: object) => void,
  *   onCancel: () => void,
  *   onStartPicker: () => void,
@@ -43,6 +46,12 @@ export function renderAddProduct({ product, prefillSelector = null, prefillUrl =
     type: 'text',
     placeholder: 'e.g. $49.99',
     value: product?.targetPrice != null ? (product.targetPrice / 100).toFixed(2) : '',
+  });
+
+  const sellField = makeField('Sell alert threshold (optional)', 'sellThreshold', {
+    type: 'text',
+    placeholder: 'e.g. $89.99 — alert if price rises above this',
+    value: product?.sellThreshold != null ? (product.sellThreshold / 100).toFixed(2) : '',
   });
 
   // Interval select
@@ -90,11 +99,32 @@ export function renderAddProduct({ product, prefillSelector = null, prefillUrl =
   selectorWrap.appendChild(selectorRow);
   selectorWrap.appendChild(selectorHint);
 
+  // Stock-only toggle
+  const stockOnlyRow = document.createElement('div');
+  stockOnlyRow.className = 'toggle-row';
+  const stockOnlyLabel = document.createElement('span');
+  stockOnlyLabel.textContent = 'Track stock only (ignore price)';
+  const stockOnlyToggle = makeToggle('stock-only', product?.stockOnly ?? false);
+  stockOnlyRow.appendChild(stockOnlyLabel);
+  stockOnlyRow.appendChild(stockOnlyToggle.el);
+
+  // Per-product notification toggle
+  const notifRow = document.createElement('div');
+  notifRow.className = 'toggle-row';
+  const notifLabel = document.createElement('span');
+  notifLabel.textContent = 'Enable notifications for this product';
+  const notifToggle = makeToggle('notif-enabled', product?.notificationEnabled !== false);
+  notifRow.appendChild(notifLabel);
+  notifRow.appendChild(notifToggle.el);
+
   wrap.appendChild(urlField.el);
   wrap.appendChild(nameField.el);
   wrap.appendChild(targetField.el);
+  wrap.appendChild(sellField.el);
   wrap.appendChild(intervalWrap);
   wrap.appendChild(selectorWrap);
+  wrap.appendChild(stockOnlyRow);
+  wrap.appendChild(notifRow);
 
   // Error display
   const errorEl = document.createElement('div');
@@ -121,8 +151,8 @@ export function renderAddProduct({ product, prefillSelector = null, prefillUrl =
     const url = urlField.input.value.trim();
     const name = nameField.input.value.trim();
     const targetRaw = targetField.input.value.trim();
+    const sellRaw = sellField.input.value.trim();
 
-    // Validation
     if (!url) return showError('URL is required');
     try { new URL(url); } catch { return showError('Enter a valid URL'); }
     if (!name) return showError('Name is required');
@@ -134,12 +164,22 @@ export function renderAddProduct({ product, prefillSelector = null, prefillUrl =
       targetPrice = parsed.value;
     }
 
+    let sellThreshold = null;
+    if (sellRaw) {
+      const parsed = parsePrice(sellRaw);
+      if (!parsed) return showError('Could not parse sell threshold — try e.g. $89.99');
+      sellThreshold = parsed.value;
+    }
+
     onSave({
       url,
       name,
       targetPrice,
+      sellThreshold,
       intervalMinutes: Number(intervalSelect.value),
       priceSelector: selectorInput.value.trim() || null,
+      stockOnly: stockOnlyToggle.input.checked,
+      notificationEnabled: notifToggle.input.checked,
     });
   });
 
@@ -152,9 +192,7 @@ export function renderAddProduct({ product, prefillSelector = null, prefillUrl =
     errorEl.style.display = 'block';
   }
 
-  // Expose selectorInput so popup.js can inject picker result
   wrap._selectorInput = selectorInput;
-
   return wrap;
 }
 
@@ -173,4 +211,18 @@ function makeField(labelText, id, { type, placeholder, value, required } = {}) {
   wrap.appendChild(label);
   wrap.appendChild(input);
   return { el: wrap, input };
+}
+
+function makeToggle(id, checked) {
+  const label = document.createElement('label');
+  label.className = 'toggle';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.id = `toggle-${id}`;
+  input.checked = checked;
+  const slider = document.createElement('span');
+  slider.className = 'toggle-slider';
+  label.appendChild(input);
+  label.appendChild(slider);
+  return { el: label, input };
 }

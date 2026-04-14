@@ -1,14 +1,9 @@
 /**
  * Orchestrates a full price-check cycle for a single product.
  *
- * Steps:
- *  1. Load product record
- *  2. Fetch + extract price/stock
- *  3. Detect selector drift (3 consecutive nulls → clear stored selector)
- *  4. Update product record
- *  5. Append history
- *  6. Maybe fire notification
- *  7. Persist updated product
+ * Multi-source support: a product can have multiple source URLs.
+ * All sources are checked on each alarm; the best price (lowest) wins.
+ * Legacy products (no sources array) are migrated lazily on first check.
  */
 
 import { getProduct, saveProduct } from '../shared/storage.js';
@@ -16,82 +11,203 @@ import { fetchAndExtract } from './fetcher.js';
 import { tabFetchAndExtract } from './tab-fetcher.js';
 import { recordObservation } from './history-manager.js';
 import { maybeNotify } from './notifier.js';
-import { DRIFT_STRIKE_LIMIT, STOCK_STATUS } from '../shared/constants.js';
+import { updateBadge } from './badge-manager.js';
+import { generateId } from '../shared/utils.js';
+import { DRIFT_STRIKE_LIMIT, STOCK_STATUS, AUTO_DISABLE_ERROR_LIMIT } from '../shared/constants.js';
 
-/**
- * Run a full price-check cycle for the given product ID.
- * @param {string} productId
- */
 export async function checkProduct(productId) {
-  const product = await getProduct(productId);
-  if (!product || !product.enabled) return;
+  let product = await getProduct(productId);
+  if (product?.enabled !== true) return;
+
+  // Lazy migration: wrap single URL into sources array
+  product = ensureSources(product);
 
   const previousPrice = product.currentPrice;
   const previousStock = product.currentStock ?? STOCK_STATUS.UNKNOWN;
 
-  // Choose fetch strategy
-  let result;
-  if (product.requiresTabExtraction) {
-    result = await tabFetchAndExtract(product);
-  } else {
-    result = await fetchAndExtract(product);
-    // If raw fetch signals SPA, flip the flag and retry with tab strategy
-    if (result.requiresTabExtraction) {
-      const updated = { ...product, requiresTabExtraction: true };
-      await saveProduct(updated);
-      result = await tabFetchAndExtract(updated);
-    }
+  // Check every source
+  const updatedSources = [];
+  let anySucceeded = false;
+  for (const source of product.sources) {
+    const updated = await checkOneSource(product, source);
+    updatedSources.push(updated);
+    if (updated.consecutiveErrors === 0) anySucceeded = true;
   }
 
-  // ── Error handling ────────────────────────────────────────────────────────
-  if (result.error) {
+  if (!anySucceeded) {
     const consecutiveErrors = (product.consecutiveErrors ?? 0) + 1;
-    await saveProduct({ ...product, consecutiveErrors, lastChecked: Date.now() });
+    await saveProduct({
+      ...product,
+      sources: updatedSources,
+      consecutiveErrors,
+      enabled: consecutiveErrors >= AUTO_DISABLE_ERROR_LIMIT ? false : product.enabled,
+      lastChecked: Date.now(),
+    });
+    await updateBadge();
     return;
   }
 
-  // ── Selector drift detection ──────────────────────────────────────────────
-  let selectors = { ...product.selectors };
-  let consecutiveNulls = product.consecutiveNulls ?? 0;
+  const bestSource = pickBestSource(updatedSources);
+  const newPrice = product.stockOnly
+    ? product.currentPrice
+    : (bestSource?.currentPrice ?? product.currentPrice);
+  const priceFields = computePriceFields(product, newPrice);
+
+  const updatedProduct = {
+    ...product,
+    sources: updatedSources,
+    bestSourceId: bestSource?.id ?? null,
+    url: updatedSources[0]?.url ?? product.url,
+    canonicalUrl: bestSource?.canonicalUrl ?? product.canonicalUrl,
+    currentPrice: newPrice,
+    currentStock: bestSource?.currentStock ?? product.currentStock,
+    currency: bestSource?.currency ?? product.currency,
+    thumbnail: bestSource?.thumbnail ?? product.thumbnail,
+    lastChecked: Date.now(),
+    consecutiveErrors: 0,
+    consecutiveNulls: 0,
+    ...priceFields,
+  };
+
+  await maybeRecord(productId, updatedProduct.currentPrice, updatedProduct.currentStock);
+  const notifId = await maybeNotify(updatedProduct, previousPrice, previousStock);
+  if (notifId) updatedProduct.lastNotified = Date.now();
+
+  await saveProduct(updatedProduct);
+  await updateBadge();
+}
+
+// ── Source migration ──────────────────────────────────────────────────────────
+
+/**
+ * Wraps a legacy product (no sources) into the multi-source shape.
+ * Exported for use in service-worker ADD_SOURCE handler.
+ * @param {import('../shared/types').Product} product
+ */
+export function ensureSources(product) {
+  if (product.sources?.length) return product;
+  const source = {
+    id: generateId(),
+    url: product.url,
+    canonicalUrl: product.canonicalUrl ?? null,
+    label: hostnameOf(product.url),
+    selectors: { price: product.selectors?.price ?? null },
+    requiresTabExtraction: product.requiresTabExtraction ?? false,
+    currentPrice: product.currentPrice,
+    currentStock: product.currentStock ?? STOCK_STATUS.UNKNOWN,
+    currency: product.currency ?? null,
+    thumbnail: product.thumbnail ?? null,
+    lastChecked: product.lastChecked ?? null,
+    consecutiveErrors: product.consecutiveErrors ?? 0,
+    consecutiveNulls: product.consecutiveNulls ?? 0,
+  };
+  return { ...product, sources: [source], bestSourceId: source.id };
+}
+
+// ── Per-source check ──────────────────────────────────────────────────────────
+
+async function checkOneSource(product, source) {
+  const target = {
+    url: source.url,
+    canonicalUrl: source.canonicalUrl,
+    selectors: source.selectors ?? { price: null },
+    requiresTabExtraction: source.requiresTabExtraction ?? false,
+  };
+
+  const result = await doFetch(target);
+
+  if (result.error) {
+    return {
+      ...source,
+      consecutiveErrors: (source.consecutiveErrors ?? 0) + 1,
+      lastChecked: Date.now(),
+    };
+  }
+
+  const { selectors, consecutiveNulls } = resolveSelectorsForSource(source, result);
+  const newPrice = product.stockOnly
+    ? source.currentPrice
+    : (result.price ?? source.currentPrice);
+
+  return {
+    ...source,
+    canonicalUrl: result.canonicalUrl ?? source.canonicalUrl,
+    selectors,
+    requiresTabExtraction: result.requiresTabExtraction ?? source.requiresTabExtraction,
+    currentPrice: newPrice,
+    currentStock: result.stock ?? source.currentStock ?? STOCK_STATUS.UNKNOWN,
+    currency: result.currency ?? source.currency,
+    thumbnail: result.thumbnail ?? source.thumbnail,
+    lastChecked: Date.now(),
+    consecutiveErrors: 0,
+    consecutiveNulls,
+  };
+}
+
+// ── Fetch helper ──────────────────────────────────────────────────────────────
+
+async function doFetch(target) {
+  if (target.requiresTabExtraction) return tabFetchAndExtract(target);
+  const result = await fetchAndExtract(target);
+  if (result.requiresTabExtraction) {
+    return tabFetchAndExtract({ ...target, requiresTabExtraction: true });
+  }
+  return result;
+}
+
+// ── Selector drift ────────────────────────────────────────────────────────────
+
+function resolveSelectorsForSource(source, result) {
+  let selectors = { ...source.selectors };
+  let consecutiveNulls = source.consecutiveNulls ?? 0;
 
   if (result.price === null) {
     consecutiveNulls += 1;
     if (consecutiveNulls >= DRIFT_STRIKE_LIMIT) {
-      // Clear user-defined selector so auto-detection runs again next cycle
-      selectors = { price: null, stock: null };
+      selectors = { price: null };
       consecutiveNulls = 0;
     }
   } else {
     consecutiveNulls = 0;
-    // If the offscreen discovered a reliable selector, persist it for next time
-    if (result.selectorUsed && result.strategy === 4 && !selectors.price) {
+    if (result.selectorUsed && result.strategy === 4 && selectors.price == null) {
       selectors.price = result.selectorUsed;
     }
   }
+  return { selectors, consecutiveNulls };
+}
 
-  // ── Update product record ─────────────────────────────────────────────────
-  const updatedProduct = {
-    ...product,
-    currentPrice: result.price ?? product.currentPrice,
-    currentStock: result.stock ?? product.currentStock,
-    currency: result.currency ?? product.currency,
-    lastChecked: Date.now(),
-    consecutiveErrors: 0,
-    consecutiveNulls,
-    selectors,
-    requiresTabExtraction: result.requiresTabExtraction ?? product.requiresTabExtraction,
-  };
+// ── Best source selection ─────────────────────────────────────────────────────
 
-  // ── History ───────────────────────────────────────────────────────────────
-  if (result.price !== null) {
-    await recordObservation(productId, { price: result.price, stock: result.stock });
+function pickBestSource(sources) {
+  const withPrice = sources.filter((s) => s.currentPrice != null && s.consecutiveErrors === 0);
+  if (withPrice.length > 0) {
+    return withPrice.reduce((best, s) => s.currentPrice < best.currentPrice ? s : best);
   }
+  // No price available: prefer in-stock
+  return sources.find((s) => s.currentStock === STOCK_STATUS.IN_STOCK) ?? sources[0] ?? null;
+}
 
-  // ── Notification ──────────────────────────────────────────────────────────
-  const notifId = await maybeNotify(updatedProduct, previousPrice, previousStock);
-  if (notifId) {
-    updatedProduct.lastNotified = Date.now();
-  }
+// ── Price stats ───────────────────────────────────────────────────────────────
 
-  await saveProduct(updatedProduct);
+function computePriceFields(product, newPrice) {
+  const initialPrice = product.initialPrice ?? newPrice;
+  const lowestPrice  = newPrice == null ? product.lowestPrice  : Math.min(newPrice, product.lowestPrice  ?? newPrice);
+  const highestPrice = newPrice == null ? product.highestPrice : Math.max(newPrice, product.highestPrice ?? newPrice);
+  return { initialPrice, lowestPrice, highestPrice };
+}
+
+// ── History recording ─────────────────────────────────────────────────────────
+
+async function maybeRecord(productId, newPrice, stock) {
+  if (newPrice == null && stock === STOCK_STATUS.UNKNOWN) return;
+  await recordObservation(productId, {
+    price: newPrice ?? 0,
+    stock: stock ?? STOCK_STATUS.UNKNOWN,
+  });
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function hostnameOf(url) {
+  try { return new URL(url).hostname; } catch { return url; }
 }

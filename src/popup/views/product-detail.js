@@ -1,5 +1,5 @@
 /**
- * Product detail view — sparkline chart + full history + actions.
+ * Product detail view — sparkline chart + metadata + actions.
  *
  * @param {{
  *   product: import('../../shared/types').Product,
@@ -9,6 +9,7 @@
  *   onDelete: (id: string) => void,
  *   onCheckNow: (id: string) => void,
  *   onToggleEnabled: (id: string, enabled: boolean) => void,
+ *   onToggleNotification: (id: string, enabled: boolean) => void,
  * }} opts
  */
 
@@ -23,6 +24,9 @@ export function renderProductDetail({
   onDelete,
   onCheckNow,
   onToggleEnabled,
+  onToggleNotification,
+  onAddSource,
+  onRemoveSource,
 }) {
   const wrap = document.createElement('div');
   wrap.className = 'detail-view';
@@ -34,11 +38,21 @@ export function renderProductDetail({
   backBtn.addEventListener('click', onBack);
   wrap.appendChild(backBtn);
 
-  // ── Name ──────────────────────────────────────────────────────────────────
+  // ── Thumbnail + name ──────────────────────────────────────────────────────
+  const headerRow = document.createElement('div');
+  headerRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+  if (product.thumbnail) {
+    const img = document.createElement('img');
+    img.src = product.thumbnail;
+    img.alt = '';
+    img.style.cssText = 'width:40px;height:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border);flex-shrink:0;';
+    headerRow.appendChild(img);
+  }
   const nameEl = document.createElement('h2');
   nameEl.textContent = product.name;
   nameEl.title = product.name;
-  wrap.appendChild(nameEl);
+  headerRow.appendChild(nameEl);
+  wrap.appendChild(headerRow);
 
   // ── Price row ─────────────────────────────────────────────────────────────
   const priceRow = document.createElement('div');
@@ -56,13 +70,37 @@ export function renderProductDetail({
     priceRow.appendChild(target);
   }
 
+  if (product.sellThreshold != null) {
+    const sell = document.createElement('span');
+    sell.className = 'price-target';
+    sell.textContent = `Sell: ${displayPrice(product.sellThreshold, product.currency)}`;
+    sell.style.color = 'var(--warning)';
+    priceRow.appendChild(sell);
+  }
+
   wrap.appendChild(priceRow);
+
+  // ── Price stats (initial / lowest / highest) ──────────────────────────────
+  if (product.initialPrice != null || product.lowestPrice != null || product.highestPrice != null) {
+    const stats = document.createElement('div');
+    stats.className = 'price-stats';
+
+    if (product.initialPrice != null) {
+      stats.appendChild(makePriceStat('Initial', displayPrice(product.initialPrice, product.currency), ''));
+    }
+    if (product.lowestPrice != null) {
+      stats.appendChild(makePriceStat('Lowest', displayPrice(product.lowestPrice, product.currency), 'low'));
+    }
+    if (product.highestPrice != null) {
+      stats.appendChild(makePriceStat('Highest', displayPrice(product.highestPrice, product.currency), 'high'));
+    }
+    wrap.appendChild(stats);
+  }
 
   // ── Sparkline ─────────────────────────────────────────────────────────────
   const chartContainer = document.createElement('div');
   chartContainer.className = 'sparkline-container';
-  const sparkline = renderSparkline(history, { width: 340, height: 64 });
-  chartContainer.appendChild(sparkline);
+  chartContainer.appendChild(renderSparkline(history, { width: 340, height: 64, currency: product.currency ?? 'USD' }));
   wrap.appendChild(chartContainer);
 
   // ── Meta grid ─────────────────────────────────────────────────────────────
@@ -80,23 +118,67 @@ export function renderProductDetail({
 
   wrap.appendChild(meta);
 
-  // ── URL ───────────────────────────────────────────────────────────────────
+  // ── URL + copy button ─────────────────────────────────────────────────────
   const urlWrap = document.createElement('div');
   urlWrap.className = 'field';
+  urlWrap.style.gap = '4px';
+
+  const urlHeader = document.createElement('div');
+  urlHeader.style.cssText = 'display:flex;align-items:center;gap:4px;';
   const urlLabel = document.createElement('span');
-  urlLabel.className = 'field label';
-  urlLabel.style.fontSize = '11px'; urlLabel.style.color = 'var(--text-muted)';
+  urlLabel.style.cssText = 'font-size:11px;color:var(--text-muted);flex:1;';
   urlLabel.textContent = 'URL';
+
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'copy-url-btn';
+  copyBtn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg> Copy`;
+  copyBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(product.canonicalUrl ?? product.url).then(() => {
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => {
+        copyBtn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg> Copy`;
+      }, 1500);
+    });
+  });
+
+  urlHeader.appendChild(urlLabel);
+  urlHeader.appendChild(copyBtn);
+
   const urlLink = document.createElement('a');
-  urlLink.href = product.url;
+  urlLink.href = product.canonicalUrl ?? product.url;
   urlLink.target = '_blank';
   urlLink.rel = 'noopener noreferrer';
   urlLink.style.cssText = 'font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;color:var(--accent)';
-  urlLink.textContent = product.url;
-  urlLink.title = product.url;
-  urlWrap.appendChild(urlLabel);
+  urlLink.textContent = product.canonicalUrl ?? product.url;
+  urlLink.title = product.canonicalUrl ?? product.url;
+
+  urlWrap.appendChild(urlHeader);
   urlWrap.appendChild(urlLink);
   wrap.appendChild(urlWrap);
+
+  // ── Sources ───────────────────────────────────────────────────────────────
+  const sources = product.sources ?? [];
+  wrap.appendChild(buildSourcesSection(product, sources, onAddSource, onRemoveSource));
+
+  // ── Notification toggle ───────────────────────────────────────────────────
+  const notifRow = document.createElement('div');
+  notifRow.className = 'toggle-row';
+  const notifLabel = document.createElement('span');
+  notifLabel.textContent = 'Notifications for this product';
+  const notifLabel2 = document.createElement('label');
+  notifLabel2.className = 'toggle';
+  const notifInput = document.createElement('input');
+  notifInput.type = 'checkbox';
+  notifInput.checked = product.notificationEnabled !== false;
+  notifInput.addEventListener('change', () => onToggleNotification(product.id, notifInput.checked));
+  const notifSlider = document.createElement('span');
+  notifSlider.className = 'toggle-slider';
+  notifLabel2.appendChild(notifInput);
+  notifLabel2.appendChild(notifSlider);
+  notifRow.appendChild(notifLabel);
+  notifRow.appendChild(notifLabel2);
+  wrap.appendChild(notifRow);
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const actions = document.createElement('div');
@@ -137,6 +219,120 @@ export function renderProductDetail({
   wrap.appendChild(actions);
 
   return wrap;
+}
+
+// ── Sources section ───────────────────────────────────────────────────────────
+
+function buildSourcesSection(product, sources, onAddSource, onRemoveSource) {
+  const section = document.createElement('div');
+  section.className = 'sources-section';
+
+  const header = document.createElement('div');
+  header.className = 'sources-header';
+  const headerLabel = document.createElement('span');
+  headerLabel.className = 'label';
+  headerLabel.textContent = sources.length > 1 ? `Sources (${sources.length})` : 'Sources';
+  header.appendChild(headerLabel);
+  section.appendChild(header);
+
+  if (sources.length > 0) {
+    const list = document.createElement('div');
+    list.className = 'source-list';
+    for (const source of sources) {
+      list.appendChild(buildSourceItem(source, product, sources.length, onRemoveSource));
+    }
+    section.appendChild(list);
+  }
+
+  // Add source form
+  const addRow = document.createElement('div');
+  addRow.className = 'add-source-row';
+
+  const urlInput = document.createElement('input');
+  urlInput.type = 'url';
+  urlInput.placeholder = 'https://other-store.com/same-product';
+  urlInput.className = 'add-source-input';
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'btn btn-secondary';
+  addBtn.textContent = '+ Add';
+  addBtn.style.flexShrink = '0';
+
+  const errEl = document.createElement('span');
+  errEl.className = 'add-source-error';
+
+  addBtn.addEventListener('click', async () => {
+    const url = urlInput.value.trim();
+    if (!url) return;
+    try { new URL(url); } catch { errEl.textContent = 'Invalid URL'; return; }
+    errEl.textContent = '';
+    addBtn.disabled = true;
+    addBtn.textContent = 'Adding…';
+    await onAddSource(product.id, url);
+  });
+
+  addRow.appendChild(urlInput);
+  addRow.appendChild(addBtn);
+  section.appendChild(addRow);
+  section.appendChild(errEl);
+
+  return section;
+}
+
+function buildSourceItem(source, product, totalSources, onRemoveSource) {
+  const item = document.createElement('div');
+  item.className = 'source-item' + (source.id === product.bestSourceId ? ' best' : '');
+
+  const left = document.createElement('div');
+  left.className = 'source-left';
+
+  const label = document.createElement('span');
+  label.className = 'source-label';
+  label.textContent = source.label ?? source.url;
+  label.title = source.url;
+
+  const priceEl = document.createElement('span');
+  priceEl.className = 'source-price';
+  if (source.currentPrice == null) {
+    priceEl.textContent = '—';
+    priceEl.style.color = 'var(--text-muted)';
+  } else {
+    priceEl.textContent = displayPrice(source.currentPrice, source.currency ?? product.currency);
+    if (source.id === product.bestSourceId) {
+      priceEl.classList.add('best');
+    }
+  }
+
+  left.appendChild(label);
+  left.appendChild(priceEl);
+  item.appendChild(left);
+
+  if (totalSources > 1) {
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'source-remove';
+    removeBtn.title = 'Remove this source';
+    removeBtn.innerHTML = `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M6 2h4a1 1 0 011 1h2v1H3V3h2a1 1 0 011-1zm7 3H3l.8 9.1A1 1 0 004.8 15h6.4a1 1 0 001-.9L13 5z"/></svg>`;
+    removeBtn.addEventListener('click', () => onRemoveSource(product.id, source.id));
+    item.appendChild(removeBtn);
+  }
+
+  return item;
+}
+
+function makePriceStat(label, value, modifier) {
+  const stat = document.createElement('div');
+  stat.className = 'price-stat';
+  const lbl = document.createElement('span');
+  lbl.className = 'label';
+  lbl.textContent = label;
+  const val = document.createElement('span');
+  val.className = 'value' + (modifier ? ` ${modifier}` : '');
+  val.textContent = value;
+  stat.appendChild(lbl);
+  stat.appendChild(val);
+  return stat;
 }
 
 function makeMetaItem(label, valueOrEl) {
