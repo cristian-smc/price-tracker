@@ -56,7 +56,15 @@ h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
   background: var(--bg); color: var(--text);
   width: 200px; outline: none;
 }
-.field input[type="number"]:focus, .field select:focus { border-color: var(--accent); }
+.field input[type="number"]:focus, .field select:focus, .field input[type="url"]:focus { border-color: var(--accent); }
+.field input[type="url"] {
+  padding: 7px 10px; border: 1px solid var(--border);
+  border-radius: 6px; font-size: 13px;
+  background: var(--bg); color: var(--text);
+  width: 100%; outline: none;
+}
+.field-hint { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.field-hint a { color: var(--accent); }
 
 .toggle-row {
   display: flex; align-items: center; justify-content: space-between;

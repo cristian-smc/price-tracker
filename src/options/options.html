@@ -21,23 +21,36 @@
   <div class="toggle-row" style="margin-top:12px">
     <span>Price drop alerts</span>
     <label class="toggle">
-      <input type="checkbox" id="notif-enabled">
+      <input type="checkbox" id="notif-enabled" aria-label="Price drop alerts">
       <span class="toggle-slider"></span>
     </label>
   </div>
   <div class="toggle-row">
     <span>Back-in-stock alerts</span>
     <label class="toggle">
-      <input type="checkbox" id="notif-stock" checked>
+      <input type="checkbox" id="notif-stock" checked aria-label="Back-in-stock alerts">
       <span class="toggle-slider"></span>
     </label>
   </div>
   <div class="toggle-row">
     <span>Notification sound</span>
     <label class="toggle">
-      <input type="checkbox" id="sound-enabled" checked>
+      <input type="checkbox" id="sound-enabled" checked aria-label="Notification sound">
       <span class="toggle-slider"></span>
     </label>
+  </div>
+
+  <div class="field" style="margin-top:12px">
+    <label for="mobile-push-url">Mobile push URL (optional)</label>
+    <input type="url" id="mobile-push-url" placeholder="https://ntfy.sh/your-topic">
+    <span class="field-hint">
+      Works with <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy.sh</a> — install the app, pick a topic name, paste the URL here.
+      Any HTTP POST webhook also works.
+    </span>
+  </div>
+  <div style="margin-top:6px">
+    <button id="btn-test-push" class="btn btn-secondary">Send test notification</button>
+    <span id="push-status" class="status-msg hidden" style="margin-left:8px"></span>
   </div>
 </div>
 
@@ -48,7 +61,7 @@
   <div class="toggle-row">
     <span>Enable daily digest</span>
     <label class="toggle">
-      <input type="checkbox" id="digest-enabled">
+      <input type="checkbox" id="digest-enabled" aria-label="Enable daily digest">
       <span class="toggle-slider"></span>
     </label>
   </div>

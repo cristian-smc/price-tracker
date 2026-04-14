@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS = {
   dailyDigestHour: 9,       // 0-23
   sortBy: 'created',        // 'created' | 'name' | 'price' | 'drop'
   filterBy: 'all',          // 'all' | 'below_target' | 'out_of_stock'
+  mobilePushUrl: '',        // ntfy.sh topic URL or any POST webhook
 };
 
 // Price extraction selector heuristics (strategy 4)

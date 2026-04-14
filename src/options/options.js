@@ -45,6 +45,7 @@ async function loadSettings() {
   document.getElementById('notif-enabled').checked = settings.notificationsEnabled ?? true;
   document.getElementById('notif-stock').checked = settings.stockNotificationsEnabled ?? true;
   document.getElementById('sound-enabled').checked = settings.soundEnabled ?? true;
+  document.getElementById('mobile-push-url').value = settings.mobilePushUrl ?? '';
   document.getElementById('digest-enabled').checked = settings.dailyDigestEnabled ?? false;
   setSelectValue('digest-hour', String(settings.dailyDigestHour ?? 9));
   setSelectValue('theme', settings.theme ?? 'auto');
@@ -66,6 +67,7 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     notificationsEnabled: document.getElementById('notif-enabled').checked,
     stockNotificationsEnabled: document.getElementById('notif-stock').checked,
     soundEnabled: document.getElementById('sound-enabled').checked,
+    mobilePushUrl: document.getElementById('mobile-push-url').value.trim(),
     dailyDigestEnabled: document.getElementById('digest-enabled').checked,
     dailyDigestHour: Number(document.getElementById('digest-hour').value),
     theme: document.getElementById('theme').value,
@@ -108,11 +110,11 @@ document.getElementById('btn-export-csv').addEventListener('click', async () => 
       rows.push([
         csvEscape(p.name),
         csvEscape(p.url),
-        p.currentPrice != null ? (p.currentPrice / 100).toFixed(2) : '',
+        centsToStr(p.currentPrice),
         p.currency ?? '',
-        p.targetPrice != null ? (p.targetPrice / 100).toFixed(2) : '',
-        p.lowestPrice != null ? (p.lowestPrice / 100).toFixed(2) : '',
-        p.highestPrice != null ? (p.highestPrice / 100).toFixed(2) : '',
+        centsToStr(p.targetPrice),
+        centsToStr(p.lowestPrice),
+        centsToStr(p.highestPrice),
         p.currentStock ?? '',
         p.enabled ? 'yes' : 'no',
         p.lastChecked ? new Date(p.lastChecked).toISOString() : '',
@@ -178,6 +180,30 @@ document.getElementById('btn-bulk-import').addEventListener('click', async () =>
   }
 });
 
+// ── Test mobile push ──────────────────────────────────────────────────────
+
+document.getElementById('btn-test-push').addEventListener('click', async () => {
+  const url = document.getElementById('mobile-push-url').value.trim();
+  if (!url) {
+    showStatus('push-status', 'Enter a URL first.', 'err');
+    return;
+  }
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Title': 'PriceWatch test', 'Content-Type': 'text/plain' },
+      body: 'Your mobile push notifications are working!',
+    });
+    if (resp.ok) {
+      showStatus('push-status', 'Sent!', 'ok');
+    } else {
+      showStatus('push-status', `Server returned ${resp.status}`, 'err');
+    }
+  } catch (err) {
+    showStatus('push-status', `Failed: ${err.message}`, 'err');
+  }
+});
+
 // ── Clear all data ────────────────────────────────────────────────────────
 
 document.getElementById('btn-clear').addEventListener('click', async () => {
@@ -213,6 +239,10 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function centsToStr(v) {
+  return v == null ? '' : (v / 100).toFixed(2);
+}
+
 function csvEscape(str) {
   const s = String(str ?? '');
   if (s.includes(',') || s.includes('"') || s.includes('\n')) {
@@ -223,5 +253,5 @@ function csvEscape(str) {
 
 // ── Init ──────────────────────────────────────────────────────────────────
 
-updateNotifStatus();
-loadSettings();
+await updateNotifStatus();
+await loadSettings();

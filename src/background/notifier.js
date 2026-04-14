@@ -35,6 +35,7 @@ export async function maybeNotify(product, previousPrice, previousStock) {
   });
 
   if (settings.soundEnabled) playSound();
+  if (settings.mobilePushUrl) sendMobilePush(settings.mobilePushUrl, title, message);
 
   return notifId;
 }
@@ -71,6 +72,13 @@ function buildMessage(event, product) {
 }
 
 function playSound() {
-  // Ask the offscreen document to play a short beep via Web Audio API.
   chrome.runtime.sendMessage({ type: 'PLAY_SOUND' }).catch(() => {});
+}
+
+function sendMobilePush(url, title, message) {
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Title': title, 'Content-Type': 'text/plain' },
+    body: message,
+  }).catch(() => {}); // fire-and-forget
 }

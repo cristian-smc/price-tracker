@@ -59,6 +59,7 @@
  *   dailyDigestEnabled: boolean,
  *   dailyDigestHour: number,
  *   sortBy: string,
- *   filterBy: string
+ *   filterBy: string,
+ *   mobilePushUrl: string
  * }} Settings
  */
