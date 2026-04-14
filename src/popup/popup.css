@@ -1,0 +1,187 @@
+/* PriceWatch Popup — 380px wide, light/dark aware */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #ffffff;
+  --surface: #f5f5f5;
+  --border: #e0e0e0;
+  --text: #1a1a1a;
+  --text-muted: #666;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --danger: #dc2626;
+  --success: #16a34a;
+  --warning: #d97706;
+  --radius: 8px;
+  --shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e1e;
+    --surface: #2a2a2a;
+    --border: #3a3a3a;
+    --text: #f0f0f0;
+    --text-muted: #999;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+}
+
+body {
+  width: 380px;
+  min-height: 200px;
+  max-height: 600px;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.header h1 { font-size: 15px; font-weight: 600; }
+.btn-icon {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); padding: 4px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+}
+.btn-icon:hover { background: var(--surface); color: var(--text); }
+.btn-icon svg { width: 18px; height: 18px; }
+
+/* ── Scrollable content area ─────────────────────────────────── */
+.view {
+  overflow-y: auto;
+  max-height: 548px; /* 600 - 52px header */
+}
+
+/* ── Notification banner ─────────────────────────────────────── */
+.banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  background: #fef3c7;
+  border-bottom: 1px solid #fde68a;
+  font-size: 12px; color: #92400e;
+}
+.banner.hidden { display: none; }
+.banner svg { flex-shrink: 0; width: 14px; height: 14px; }
+.banner a { color: inherit; font-weight: 600; }
+
+/* ── Empty state ─────────────────────────────────────────────── */
+.empty {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 10px; padding: 40px 20px; color: var(--text-muted); text-align: center;
+}
+.empty svg { width: 40px; height: 40px; opacity: .4; }
+.empty p { font-size: 13px; line-height: 1.5; }
+
+/* ── Product list ────────────────────────────────────────────── */
+.product-list { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+
+.product-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: box-shadow .15s;
+}
+.product-card:hover { box-shadow: var(--shadow); }
+
+.product-card .row1 { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.product-card .name { font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.product-card .price { font-size: 15px; font-weight: 700; white-space: nowrap; }
+.product-card .price.drop { color: var(--success); }
+
+.product-card .row2 { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; color: var(--text-muted); }
+.badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 5px; border-radius: 10px; font-size: 10px; font-weight: 600;
+}
+.badge.in-stock { background: #dcfce7; color: #166534; }
+.badge.out-of-stock { background: #fee2e2; color: #991b1b; }
+.badge.unknown { background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); }
+.badge.error { background: #fef3c7; color: #92400e; }
+.badge.drift { background: #fef3c7; color: #92400e; }
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 500;
+  cursor: pointer; border: 1px solid transparent; transition: background .15s;
+}
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
+.btn-secondary:hover { background: var(--border); }
+.btn-danger { background: transparent; color: var(--danger); border-color: var(--danger); }
+.btn-danger:hover { background: #fee2e2; }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+/* ── Add / Edit product form ─────────────────────────────────── */
+.form-view { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+.form-view h2 { font-size: 14px; font-weight: 600; }
+
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+.field input, .field select {
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; background: var(--bg); color: var(--text);
+  outline: none; transition: border-color .15s;
+}
+.field input:focus, .field select:focus { border-color: var(--accent); }
+.field .hint { font-size: 11px; color: var(--text-muted); }
+.field .error { font-size: 11px; color: var(--danger); }
+
+.selector-row { display: flex; gap: 6px; align-items: center; }
+.selector-row input { flex: 1; }
+
+.form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+
+/* ── Product detail view ─────────────────────────────────────── */
+.detail-view { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+.detail-view h2 { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.price-row { display: flex; align-items: baseline; gap: 10px; }
+.price-big { font-size: 24px; font-weight: 700; }
+.price-target { font-size: 13px; color: var(--text-muted); }
+
+.sparkline-container { background: var(--surface); border-radius: var(--radius); padding: 8px; }
+.sparkline-container svg { display: block; width: 100%; }
+
+.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.meta-item { display: flex; flex-direction: column; gap: 2px; }
+.meta-item .label { font-size: 11px; color: var(--text-muted); }
+.meta-item .value { font-size: 13px; font-weight: 500; }
+
+.detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── Back button ─────────────────────────────────────────────── */
+.back-btn {
+  display: flex; align-items: center; gap: 4px;
+  background: none; border: none; cursor: pointer;
+  color: var(--accent); font-size: 13px; padding: 0;
+}
+.back-btn svg { width: 14px; height: 14px; }
+
+/* ── Loading spinner ─────────────────────────────────────────── */
+.spinner {
+  width: 16px; height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.loading-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 13px; color: var(--text-muted); }
