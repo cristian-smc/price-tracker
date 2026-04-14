@@ -45,13 +45,13 @@ export function renderAddProduct({ product, prefillSelector = null, prefillUrl =
   const targetField = makeField('Target price (optional)', 'targetPrice', {
     type: 'text',
     placeholder: 'e.g. $49.99',
-    value: product?.targetPrice != null ? (product.targetPrice / 100).toFixed(2) : '',
+    value: product?.targetPrice == null ? '' : (product.targetPrice / 100).toFixed(2),
   });
 
   const sellField = makeField('Sell alert threshold (optional)', 'sellThreshold', {
     type: 'text',
     placeholder: 'e.g. $89.99 — alert if price rises above this',
-    value: product?.sellThreshold != null ? (product.sellThreshold / 100).toFixed(2) : '',
+    value: product?.sellThreshold == null ? '' : (product.sellThreshold / 100).toFixed(2),
   });
 
   // Interval select
@@ -99,15 +99,6 @@ export function renderAddProduct({ product, prefillSelector = null, prefillUrl =
   selectorWrap.appendChild(selectorRow);
   selectorWrap.appendChild(selectorHint);
 
-  // Stock-only toggle
-  const stockOnlyRow = document.createElement('div');
-  stockOnlyRow.className = 'toggle-row';
-  const stockOnlyLabel = document.createElement('span');
-  stockOnlyLabel.textContent = 'Track stock only (ignore price)';
-  const stockOnlyToggle = makeToggle('stock-only', product?.stockOnly ?? false);
-  stockOnlyRow.appendChild(stockOnlyLabel);
-  stockOnlyRow.appendChild(stockOnlyToggle.el);
-
   // Per-product notification toggle
   const notifRow = document.createElement('div');
   notifRow.className = 'toggle-row';
@@ -123,7 +114,6 @@ export function renderAddProduct({ product, prefillSelector = null, prefillUrl =
   wrap.appendChild(sellField.el);
   wrap.appendChild(intervalWrap);
   wrap.appendChild(selectorWrap);
-  wrap.appendChild(stockOnlyRow);
   wrap.appendChild(notifRow);
 
   // Error display
@@ -178,7 +168,6 @@ export function renderAddProduct({ product, prefillSelector = null, prefillUrl =
       sellThreshold,
       intervalMinutes: Number(intervalSelect.value),
       priceSelector: selectorInput.value.trim() || null,
-      stockOnly: stockOnlyToggle.input.checked,
       notificationEnabled: notifToggle.input.checked,
     });
   });

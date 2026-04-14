@@ -43,7 +43,6 @@ async function loadSettings() {
   if (!settings) return;
 
   document.getElementById('notif-enabled').checked = settings.notificationsEnabled ?? true;
-  document.getElementById('notif-stock').checked = settings.stockNotificationsEnabled ?? true;
   document.getElementById('sound-enabled').checked = settings.soundEnabled ?? true;
   document.getElementById('mobile-push-url').value = settings.mobilePushUrl ?? '';
   document.getElementById('digest-enabled').checked = settings.dailyDigestEnabled ?? false;
@@ -52,6 +51,8 @@ async function loadSettings() {
   setSelectValue('default-interval', String(settings.defaultInterval ?? 15));
   setSelectValue('default-currency', settings.defaultCurrency ?? 'USD');
   document.getElementById('history-max').value = String(settings.historyMaxPoints ?? 500);
+  document.getElementById('affiliate-amazon').value = settings.affiliateAmazonTag ?? '';
+  document.getElementById('affiliate-skimlinks').value = settings.affiliateSkimlinksId ?? '';
 }
 
 function setSelectValue(id, value) {
@@ -65,7 +66,6 @@ function setSelectValue(id, value) {
 document.getElementById('btn-save').addEventListener('click', async () => {
   const data = {
     notificationsEnabled: document.getElementById('notif-enabled').checked,
-    stockNotificationsEnabled: document.getElementById('notif-stock').checked,
     soundEnabled: document.getElementById('sound-enabled').checked,
     mobilePushUrl: document.getElementById('mobile-push-url').value.trim(),
     dailyDigestEnabled: document.getElementById('digest-enabled').checked,
@@ -74,6 +74,8 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     defaultInterval: Number(document.getElementById('default-interval').value),
     defaultCurrency: document.getElementById('default-currency').value,
     historyMaxPoints: Math.max(50, Math.min(5000, Number(document.getElementById('history-max').value))),
+    affiliateAmazonTag: document.getElementById('affiliate-amazon').value.trim(),
+    affiliateSkimlinksId: document.getElementById('affiliate-skimlinks').value.trim(),
   };
 
   try {

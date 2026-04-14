@@ -82,14 +82,14 @@ async function fetchWithRotation(url) {
 
 export async function fetchAndExtract(product) {
   if (product.requiresTabExtraction) {
-    return { price: null, currency: null, stock: 'unknown', strategy: null, selectorUsed: null, requiresTabExtraction: true, canonicalUrl: null, thumbnail: null, error: null };
+    return { price: null, currency: null, strategy: null, selectorUsed: null, requiresTabExtraction: true, canonicalUrl: null, thumbnail: null, error: null };
   }
 
   let html, finalUrl;
   try {
     ({ html, finalUrl } = await retry(() => fetchWithRotation(product.url), { attempts: 2, baseDelayMs: 1000 }));
   } catch (err) {
-    return { price: null, currency: null, stock: 'unknown', strategy: null, selectorUsed: null, requiresTabExtraction: false, canonicalUrl: null, thumbnail: null, error: err.message };
+    return { price: null, currency: null, strategy: null, selectorUsed: null, requiresTabExtraction: false, canonicalUrl: null, thumbnail: null, error: err.message };
   }
 
   try {
@@ -104,7 +104,6 @@ export async function fetchAndExtract(product) {
     return {
       price: result?.price ?? null,
       currency: result?.currency ?? null,
-      stock: result?.stock ?? 'unknown',
       strategy: result?.strategy ?? null,
       selectorUsed: result?.selectorUsed ?? null,
       thumbnail: result?.thumbnail ?? null,

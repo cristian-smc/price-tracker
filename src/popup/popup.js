@@ -77,9 +77,10 @@ async function showList() {
 // ── View: product detail ──────────────────────────────────────────────────
 
 async function showDetail(productId) {
-  const [{ products }, { points }] = await Promise.all([
+  const [{ products }, { points }, { settings }] = await Promise.all([
     send({ type: MSG.GET_PRODUCTS }),
     send({ type: MSG.GET_HISTORY, id: productId }),
+    send({ type: MSG.GET_SETTINGS }),
   ]);
   const product = products?.[productId];
   if (!product) return showList();
@@ -87,6 +88,7 @@ async function showDetail(productId) {
   const view = renderProductDetail({
     product,
     history: points ?? [],
+    settings: settings ?? {},
     onBack: showList,
     onEdit: (id) => showEdit(products[id]),
     onDelete: async (id) => {
@@ -105,8 +107,9 @@ async function showDetail(productId) {
       await send({ type: MSG.UPDATE_PRODUCT, id, data: { notificationEnabled } });
     },
     onAddSource: async (productId, url) => {
-      await send({ type: MSG.ADD_SOURCE, productId, url });
-      showDetail(productId);
+      const resp = await send({ type: MSG.ADD_SOURCE, productId, url });
+      if (!resp?.error) await showDetail(productId);
+      return resp;
     },
     onRemoveSource: async (productId, sourceId) => {
       await send({ type: MSG.REMOVE_SOURCE, productId, sourceId });

@@ -26,6 +26,8 @@ export const DEFAULT_SETTINGS = {
   sortBy: 'created',        // 'created' | 'name' | 'price' | 'drop'
   filterBy: 'all',          // 'all' | 'below_target' | 'out_of_stock'
   mobilePushUrl: '',        // ntfy.sh topic URL or any POST webhook
+  affiliateAmazonTag: '',   // Amazon Associates tag (e.g. "yourname-20")
+  affiliateSkimlinksId: '', // Skimlinks publisher ID (e.g. "123456X123456")
 };
 
 // Price extraction selector heuristics (strategy 4)
@@ -51,24 +53,6 @@ export const HEURISTIC_SELECTORS = [
   '[itemprop="price"]',
 ];
 
-// Stock selector heuristics (strategy 5)
-export const STOCK_SELECTORS = [
-  '[itemprop="availability"]',
-  '.availability',
-  '.stock-status',
-  '#availability',
-  '[data-testid="fulfillment-add-to-cart-button"]',
-  '#add-to-cart-button',
-  '.add-to-cart',
-  'button[data-action="add-to-cart"]',
-];
-
-// Stock status values
-export const STOCK_STATUS = {
-  IN_STOCK: 'in_stock',
-  OUT_OF_STOCK: 'out_of_stock',
-  UNKNOWN: 'unknown',
-};
 
 // Message types (popup ↔ service worker)
 export const MSG = {

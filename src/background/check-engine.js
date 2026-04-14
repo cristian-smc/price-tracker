@@ -13,7 +13,7 @@ import { recordObservation } from './history-manager.js';
 import { maybeNotify } from './notifier.js';
 import { updateBadge } from './badge-manager.js';
 import { generateId } from '../shared/utils.js';
-import { DRIFT_STRIKE_LIMIT, STOCK_STATUS, AUTO_DISABLE_ERROR_LIMIT } from '../shared/constants.js';
+import { DRIFT_STRIKE_LIMIT, AUTO_DISABLE_ERROR_LIMIT } from '../shared/constants.js';
 
 export async function checkProduct(productId) {
   let product = await getProduct(productId);
@@ -23,13 +23,12 @@ export async function checkProduct(productId) {
   product = ensureSources(product);
 
   const previousPrice = product.currentPrice;
-  const previousStock = product.currentStock ?? STOCK_STATUS.UNKNOWN;
 
   // Check every source
   const updatedSources = [];
   let anySucceeded = false;
   for (const source of product.sources) {
-    const updated = await checkOneSource(product, source);
+    const updated = await checkOneSource(source);
     updatedSources.push(updated);
     if (updated.consecutiveErrors === 0) anySucceeded = true;
   }
@@ -48,9 +47,7 @@ export async function checkProduct(productId) {
   }
 
   const bestSource = pickBestSource(updatedSources);
-  const newPrice = product.stockOnly
-    ? product.currentPrice
-    : (bestSource?.currentPrice ?? product.currentPrice);
+  const newPrice = bestSource?.currentPrice ?? product.currentPrice;
   const priceFields = computePriceFields(product, newPrice);
 
   const updatedProduct = {
@@ -60,7 +57,6 @@ export async function checkProduct(productId) {
     url: updatedSources[0]?.url ?? product.url,
     canonicalUrl: bestSource?.canonicalUrl ?? product.canonicalUrl,
     currentPrice: newPrice,
-    currentStock: bestSource?.currentStock ?? product.currentStock,
     currency: bestSource?.currency ?? product.currency,
     thumbnail: bestSource?.thumbnail ?? product.thumbnail,
     lastChecked: Date.now(),
@@ -69,8 +65,8 @@ export async function checkProduct(productId) {
     ...priceFields,
   };
 
-  await maybeRecord(productId, updatedProduct.currentPrice, updatedProduct.currentStock);
-  const notifId = await maybeNotify(updatedProduct, previousPrice, previousStock);
+  await maybeRecord(productId, updatedProduct.currentPrice);
+  const notifId = await maybeNotify(updatedProduct, previousPrice);
   if (notifId) updatedProduct.lastNotified = Date.now();
 
   await saveProduct(updatedProduct);
@@ -94,7 +90,6 @@ export function ensureSources(product) {
     selectors: { price: product.selectors?.price ?? null },
     requiresTabExtraction: product.requiresTabExtraction ?? false,
     currentPrice: product.currentPrice,
-    currentStock: product.currentStock ?? STOCK_STATUS.UNKNOWN,
     currency: product.currency ?? null,
     thumbnail: product.thumbnail ?? null,
     lastChecked: product.lastChecked ?? null,
@@ -106,7 +101,7 @@ export function ensureSources(product) {
 
 // ── Per-source check ──────────────────────────────────────────────────────────
 
-async function checkOneSource(product, source) {
+async function checkOneSource(source) {
   const target = {
     url: source.url,
     canonicalUrl: source.canonicalUrl,
@@ -125,17 +120,13 @@ async function checkOneSource(product, source) {
   }
 
   const { selectors, consecutiveNulls } = resolveSelectorsForSource(source, result);
-  const newPrice = product.stockOnly
-    ? source.currentPrice
-    : (result.price ?? source.currentPrice);
 
   return {
     ...source,
     canonicalUrl: result.canonicalUrl ?? source.canonicalUrl,
     selectors,
     requiresTabExtraction: result.requiresTabExtraction ?? source.requiresTabExtraction,
-    currentPrice: newPrice,
-    currentStock: result.stock ?? source.currentStock ?? STOCK_STATUS.UNKNOWN,
+    currentPrice: result.price ?? source.currentPrice,
     currency: result.currency ?? source.currency,
     thumbnail: result.thumbnail ?? source.thumbnail,
     lastChecked: Date.now(),
@@ -183,8 +174,7 @@ function pickBestSource(sources) {
   if (withPrice.length > 0) {
     return withPrice.reduce((best, s) => s.currentPrice < best.currentPrice ? s : best);
   }
-  // No price available: prefer in-stock
-  return sources.find((s) => s.currentStock === STOCK_STATUS.IN_STOCK) ?? sources[0] ?? null;
+  return sources[0] ?? null;
 }
 
 // ── Price stats ───────────────────────────────────────────────────────────────
@@ -198,12 +188,9 @@ function computePriceFields(product, newPrice) {
 
 // ── History recording ─────────────────────────────────────────────────────────
 
-async function maybeRecord(productId, newPrice, stock) {
-  if (newPrice == null && stock === STOCK_STATUS.UNKNOWN) return;
-  await recordObservation(productId, {
-    price: newPrice ?? 0,
-    stock: stock ?? STOCK_STATUS.UNKNOWN,
-  });
+async function maybeRecord(productId, newPrice) {
+  if (newPrice == null) return;
+  await recordObservation(productId, { price: newPrice });
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

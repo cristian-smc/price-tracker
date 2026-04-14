@@ -8,7 +8,7 @@ import { updateBadge } from './badge-manager.js';
 import { syncDigestAlarm, fireDigest } from './digest.js';
 import { getProducts, getProduct, saveProduct, deleteProduct, getHistory, getSettings, updateSettings } from '../shared/storage.js';
 import { generateId, productIdFromAlarm } from '../shared/utils.js';
-import { MSG, DEFAULT_SETTINGS, STOCK_STATUS, ALARM_DIGEST } from '../shared/constants.js';
+import { MSG, DEFAULT_SETTINGS, ALARM_DIGEST } from '../shared/constants.js';
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -99,10 +99,9 @@ async function handleAddProduct(data) {
     currency: data.currency ?? DEFAULT_SETTINGS.defaultCurrency,
     intervalMinutes: data.intervalMinutes ?? DEFAULT_SETTINGS.defaultInterval,
     enabled: true, notificationEnabled: data.notificationEnabled !== false,
-    stockOnly: data.stockOnly ?? false,
-    selectors: { price: data.priceSelector ?? null, stock: null },
+    selectors: { price: data.priceSelector ?? null },
     requiresTabExtraction: false, sources: [], bestSourceId: null,
-    currentPrice: null, currentStock: STOCK_STATUS.UNKNOWN,
+    currentPrice: null,
     initialPrice: null, lowestPrice: null, highestPrice: null,
     lastChecked: null, lastNotified: null,
     consecutiveErrors: 0, consecutiveNulls: 0,
@@ -171,10 +170,10 @@ async function handleImportUrls(urls) {
       id: generateId(), url, canonicalUrl: null, name: hostnameOf(url),
       thumbnail: null, targetPrice: null, sellThreshold: null,
       currency: settings.defaultCurrency, intervalMinutes: settings.defaultInterval,
-      enabled: true, notificationEnabled: true, stockOnly: false,
-      selectors: { price: null, stock: null }, requiresTabExtraction: false,
+      enabled: true, notificationEnabled: true,
+      selectors: { price: null }, requiresTabExtraction: false,
       sources: [], bestSourceId: null,
-      currentPrice: null, currentStock: STOCK_STATUS.UNKNOWN,
+      currentPrice: null,
       initialPrice: null, lowestPrice: null, highestPrice: null,
       lastChecked: null, lastNotified: null,
       consecutiveErrors: 0, consecutiveNulls: 0,
@@ -197,8 +196,7 @@ async function handleAddSource(productId, url) {
   const newSource = {
     id: generateId(), url, canonicalUrl: null, label: hostnameOf(url),
     selectors: { price: null }, requiresTabExtraction: false,
-    currentPrice: null, currentStock: STOCK_STATUS.UNKNOWN,
-    currency: null, thumbnail: null, lastChecked: null,
+    currentPrice: null, currency: null, thumbnail: null, lastChecked: null,
     consecutiveErrors: 0, consecutiveNulls: 0,
   };
   const updated = { ...withSources, sources: [...withSources.sources, newSource] };

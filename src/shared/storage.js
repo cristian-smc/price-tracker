@@ -56,7 +56,7 @@ export async function getHistory(productId) {
 /**
  * Appends a new history point and prunes to maxPoints.
  * @param {string} productId
- * @param {{ price: number, stock: string }} point
+ * @param {{ price: number }} point
  * @param {number} maxPoints
  */
 export async function appendHistory(productId, point, maxPoints) {
@@ -64,7 +64,7 @@ export async function appendHistory(productId, point, maxPoints) {
   const result = await chrome.storage.local.get(key);
   const existing = result[key]?.points ?? [];
 
-  const newPoint = { ts: Date.now(), price: point.price, stock: point.stock };
+  const newPoint = { ts: Date.now(), price: point.price };
   const updated = [...existing, newPoint];
   const pruned = updated.length > maxPoints
     ? updated.slice(updated.length - maxPoints)

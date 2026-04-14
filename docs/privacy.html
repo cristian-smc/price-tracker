@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — PriceWatch</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --navy: #1a1f36;
+      --accent: #6c63ff;
+      --accent-dark: #5a52d5;
+      --text: #2d2d2d;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --surface: #f9fafb;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text);
+      background: #ffffff;
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    /* ── Navigation ── */
+    nav {
+      background: var(--navy);
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .nav-brand {
+      color: #ffffff;
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      text-decoration: none;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 1.5rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: rgba(255, 255, 255, 0.75);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: color 0.15s;
+    }
+
+    .nav-links a:hover {
+      color: #ffffff;
+    }
+
+    /* ── Page header ── */
+    .page-header {
+      background: var(--navy);
+      color: #ffffff;
+      padding: 4rem 2rem 3rem;
+    }
+
+    .page-header-inner {
+      max-width: 760px;
+      margin: 0 auto;
+    }
+
+    .page-header h1 {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+      margin-bottom: 0.75rem;
+    }
+
+    .page-header .last-updated {
+      font-size: 0.875rem;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    /* ── Content ── */
+    .content {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 3.5rem 2rem 5rem;
+    }
+
+    .content p {
+      margin-bottom: 1rem;
+      color: var(--text);
+    }
+
+    .content p + p {
+      margin-top: 0;
+    }
+
+    /* Sections */
+    .policy-section {
+      margin-bottom: 3rem;
+    }
+
+    .policy-section h2 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--accent);
+      display: inline-block;
+    }
+
+    .policy-section p {
+      font-size: 0.97rem;
+      color: #3d3d3d;
+    }
+
+    /* Intro callout */
+    .intro-callout {
+      background: #ede9ff;
+      border-left: 4px solid var(--accent);
+      border-radius: 0 6px 6px 0;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 3rem;
+      font-size: 0.97rem;
+      color: var(--navy);
+      line-height: 1.6;
+    }
+
+    .intro-callout strong {
+      display: block;
+      margin-bottom: 0.35rem;
+      font-weight: 700;
+    }
+
+    /* Definition list style for data items */
+    .data-list {
+      list-style: none;
+      margin: 0.75rem 0 1rem;
+      padding: 0;
+    }
+
+    .data-list li {
+      padding: 0.55rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.95rem;
+      display: flex;
+      gap: 0.75rem;
+      align-items: baseline;
+      color: #3d3d3d;
+    }
+
+    .data-list li:last-child {
+      border-bottom: none;
+    }
+
+    .data-label {
+      font-weight: 600;
+      color: var(--navy);
+      min-width: 160px;
+      flex-shrink: 0;
+    }
+
+    /* ── Footer ── */
+    footer {
+      background: #f3f4f6;
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      text-align: center;
+    }
+
+    .footer-links {
+      list-style: none;
+      display: flex;
+      justify-content: center;
+      gap: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .footer-links a {
+      font-size: 0.875rem;
+      color: var(--muted);
+      text-decoration: none;
+    }
+
+    .footer-links a:hover {
+      color: var(--text);
+    }
+
+    .footer-copy {
+      font-size: 0.8rem;
+      color: #9ca3af;
+      margin-bottom: 0.75rem;
+    }
+
+    .affiliate-disclosure {
+      font-size: 0.78rem;
+      color: #9ca3af;
+      max-width: 600px;
+      margin: 0 auto;
+      line-height: 1.5;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      .page-header {
+        padding: 3rem 1.25rem 2.5rem;
+      }
+
+      .content {
+        padding: 2.5rem 1.25rem 4rem;
+      }
+
+      .data-label {
+        min-width: 120px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav>
+    <a href="index.html" class="nav-brand">PriceWatch</a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="privacy.html" aria-current="page">Privacy Policy</a></li>
+    </ul>
+  </nav>
+
+  <!-- Page header -->
+  <header class="page-header">
+    <div class="page-header-inner">
+      <h1>Privacy Policy</h1>
+      <p class="last-updated">Last updated: 2026-04-14</p>
+    </div>
+  </header>
+
+  <!-- Content -->
+  <main class="content">
+
+    <div class="intro-callout">
+      <strong>The short version</strong>
+      PriceWatch does not collect, transmit, or sell your personal data. Everything the extension stores lives in your browser and never leaves your device, unless you explicitly configure an external notification endpoint.
+    </div>
+
+    <!-- 1. What data is stored -->
+    <div class="policy-section" id="data-stored">
+      <h2>1. What data is stored</h2>
+      <p>When you add a product to PriceWatch, the extension saves the following information locally in your browser using the <code>chrome.storage</code> API:</p>
+      <ul class="data-list">
+        <li><span class="data-label">Product URL</span> The page address of the product you are tracking.</li>
+        <li><span class="data-label">Product name</span> The title detected on the product page at the time you added it.</li>
+        <li><span class="data-label">Price history</span> A timestamped log of observed prices, retained for as long as you track the product.</li>
+        <li><span class="data-label">Target price</span> The price threshold you set for notifications, if any.</li>
+        <li><span class="data-label">Check interval</span> How frequently you have configured the extension to re-check the price (e.g., every hour, daily).</li>
+      </ul>
+      <p>This data is stored exclusively in <code>chrome.storage.local</code> on your device. It is never transmitted to any server operated by PriceWatch or any third party, except as described in section 4 below regarding affiliate links and section 5 regarding optional push notifications.</p>
+    </div>
+
+    <!-- 2. Browsing data -->
+    <div class="policy-section" id="browsing-data">
+      <h2>2. Browsing data</h2>
+      <p>PriceWatch requests permission to read page content. This permission is used only to extract the current price and product name from pages you explicitly choose to track. The extension does not scan pages in the background, does not log your browsing history, and does not read content from pages unrelated to products you have added.</p>
+      <p>When the extension performs a scheduled price check, it fetches only the specific product URL you provided. No other page data is read or stored during that process.</p>
+    </div>
+
+    <!-- 3. Notifications -->
+    <div class="policy-section" id="notifications">
+      <h2>3. Notifications</h2>
+      <p>Price drop alerts are delivered through the Chrome Notifications API, which is handled entirely by your browser and operating system. No notification content is routed through an external server operated by PriceWatch.</p>
+      <p>In the extension settings, you have the option to configure a custom push URL (for example, a webhook to a service such as Pushover or IFTTT). If you choose to enable this optional feature, the extension will send a notification payload to the URL you specify. That communication occurs between your browser and the endpoint you configured — PriceWatch has no visibility into it and does not control the privacy practices of any third-party push service you choose to use.</p>
+      <p>If you do not configure a push URL, no external network requests are made for the purpose of notifications.</p>
+    </div>
+
+    <!-- 4. Affiliate links -->
+    <div class="policy-section" id="affiliate-links">
+      <h2>4. Affiliate links</h2>
+      <p>When you click a product link inside the PriceWatch popup or notification, the link may be routed through an affiliate network such as Amazon Associates or Skimlinks. This is a standard URL redirect that allows PriceWatch to earn a small commission if you complete a purchase — at no additional cost to you.</p>
+      <p>The affiliate redirect is a URL transformation only. No personal data about you (name, email address, browsing history, or device identifiers) is included in the redirect or shared with the affiliate network beyond what is inherent in any ordinary web request (IP address, browser user-agent string).</p>
+      <p>You can see the affiliate disclosure on every page of this site. If you prefer not to use affiliate links, you can navigate directly to the retailer's website instead of clicking through the extension.</p>
+    </div>
+
+    <!-- 5. No analytics or accounts -->
+    <div class="policy-section" id="no-analytics">
+      <h2>5. No analytics, no tracking, no accounts</h2>
+      <p>PriceWatch does not include any analytics library (such as Google Analytics, Mixpanel, or similar). The extension does not phone home with usage statistics, error reports, or telemetry of any kind.</p>
+      <p>There is no account system. You do not need to create a profile, log in, or provide an email address to use PriceWatch. Because there are no accounts, there is no user database and no credentials to be breached.</p>
+      <p>No cookies or tracking pixels are set by PriceWatch or any service it communicates with.</p>
+    </div>
+
+    <!-- 6. Data retention and deletion -->
+    <div class="policy-section" id="data-retention">
+      <h2>6. Data retention and deletion</h2>
+      <p>Your tracked products and price history remain in <code>chrome.storage.local</code> until you delete them. You can remove individual products at any time from within the extension. Uninstalling the extension removes all associated storage from your browser.</p>
+      <p>Because PriceWatch holds no data on any server, there is no remote data to request deletion of. All data is under your direct control.</p>
+    </div>
+
+    <!-- 7. Changes to this policy -->
+    <div class="policy-section" id="changes">
+      <h2>7. Changes to this policy</h2>
+      <p>If this privacy policy is updated in a material way, the "Last updated" date at the top of this page will be revised. Continued use of the extension after any update constitutes acceptance of the revised policy. If you disagree with a change, you can uninstall the extension at any time.</p>
+    </div>
+
+    <!-- 8. Contact -->
+    <div class="policy-section" id="contact">
+      <h2>8. Contact</h2>
+      <p>If you have questions about this privacy policy or how PriceWatch handles data, please open an issue on the project's repository or use the support link in the Chrome Web Store listing.</p>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <ul class="footer-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="privacy.html">Privacy Policy</a></li>
+    </ul>
+    <p class="footer-copy">&copy; 2026 PriceWatch. All rights reserved.</p>
+    <p class="affiliate-disclosure">
+      PriceWatch participates in affiliate programmes. When you click through to make a purchase, we may earn a small commission at no extra cost to you.
+    </p>
+  </footer>
+
+</body>
+</html>

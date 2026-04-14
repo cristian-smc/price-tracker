@@ -13,12 +13,14 @@
  * }} opts
  */
 
-import { displayPrice, createStockBadge } from '../components/currency-badge.js';
+import { displayPrice } from '../components/currency-badge.js';
 import { renderSparkline } from '../components/sparkline.js';
+import { applyAffiliate } from '../../shared/affiliate.js';
 
 export function renderProductDetail({
   product,
   history,
+  settings,
   onBack,
   onEdit,
   onDelete,
@@ -107,7 +109,6 @@ export function renderProductDetail({
   const meta = document.createElement('div');
   meta.className = 'meta-grid';
 
-  meta.appendChild(makeMetaItem('Stock', createStockBadge(product.currentStock ?? 'unknown')));
   meta.appendChild(makeMetaItem('Check interval', `Every ${product.intervalMinutes} min`));
   meta.appendChild(makeMetaItem('Last checked', product.lastChecked ? formatDate(product.lastChecked) : '—'));
   meta.appendChild(makeMetaItem('History points', String(history.length)));
@@ -146,7 +147,7 @@ export function renderProductDetail({
   urlHeader.appendChild(copyBtn);
 
   const urlLink = document.createElement('a');
-  urlLink.href = product.canonicalUrl ?? product.url;
+  urlLink.href = applyAffiliate(product.canonicalUrl ?? product.url, settings ?? {});
   urlLink.target = '_blank';
   urlLink.rel = 'noopener noreferrer';
   urlLink.style.cssText = 'font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;color:var(--accent)';
@@ -159,7 +160,7 @@ export function renderProductDetail({
 
   // ── Sources ───────────────────────────────────────────────────────────────
   const sources = product.sources ?? [];
-  wrap.appendChild(buildSourcesSection(product, sources, onAddSource, onRemoveSource));
+  wrap.appendChild(buildSourcesSection(product, sources, onAddSource, onRemoveSource, settings));
 
   // ── Notification toggle ───────────────────────────────────────────────────
   const notifRow = document.createElement('div');
@@ -223,7 +224,7 @@ export function renderProductDetail({
 
 // ── Sources section ───────────────────────────────────────────────────────────
 
-function buildSourcesSection(product, sources, onAddSource, onRemoveSource) {
+function buildSourcesSection(product, sources, onAddSource, onRemoveSource, settings) {
   const section = document.createElement('div');
   section.className = 'sources-section';
 
@@ -239,7 +240,7 @@ function buildSourcesSection(product, sources, onAddSource, onRemoveSource) {
     const list = document.createElement('div');
     list.className = 'source-list';
     for (const source of sources) {
-      list.appendChild(buildSourceItem(source, product, sources.length, onRemoveSource));
+      list.appendChild(buildSourceItem(source, product, sources.length, onRemoveSource, settings));
     }
     section.appendChild(list);
   }
@@ -269,7 +270,18 @@ function buildSourcesSection(product, sources, onAddSource, onRemoveSource) {
     errEl.textContent = '';
     addBtn.disabled = true;
     addBtn.textContent = 'Adding…';
-    await onAddSource(product.id, url);
+    try {
+      const resp = await onAddSource(product.id, url);
+      if (resp?.error) {
+        errEl.textContent = resp.error === 'already_added' ? 'URL already added' : resp.error;
+        addBtn.disabled = false;
+        addBtn.textContent = '+ Add';
+      }
+    } catch {
+      errEl.textContent = 'Failed to add source';
+      addBtn.disabled = false;
+      addBtn.textContent = '+ Add';
+    }
   });
 
   addRow.appendChild(urlInput);
@@ -280,17 +292,21 @@ function buildSourcesSection(product, sources, onAddSource, onRemoveSource) {
   return section;
 }
 
-function buildSourceItem(source, product, totalSources, onRemoveSource) {
+function buildSourceItem(source, product, totalSources, onRemoveSource, settings) {
   const item = document.createElement('div');
   item.className = 'source-item' + (source.id === product.bestSourceId ? ' best' : '');
 
   const left = document.createElement('div');
   left.className = 'source-left';
 
-  const label = document.createElement('span');
+  const label = document.createElement('a');
   label.className = 'source-label';
   label.textContent = source.label ?? source.url;
   label.title = source.url;
+  label.href = applyAffiliate(source.url, settings ?? {});
+  label.target = '_blank';
+  label.rel = 'noopener noreferrer';
+  label.addEventListener('click', (e) => e.stopPropagation());
 
   const priceEl = document.createElement('span');
   priceEl.className = 'source-price';

@@ -31,12 +31,10 @@ export async function fireDigest() {
   if (!settings.notificationsEnabled || !settings.dailyDigestEnabled) return;
 
   const products = await getProducts();
-  const lastTs = await getLastDigestTs();
   const entries = Object.values(products).filter((p) => p.enabled);
 
-  const drops   = entries.filter((p) => p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice);
-  const errors  = entries.filter((p) => p.consecutiveErrors >= 3);
-  const oos     = entries.filter((p) => p.currentStock === 'out_of_stock');
+  const drops  = entries.filter((p) => p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice);
+  const errors = entries.filter((p) => p.consecutiveErrors >= 3);
 
   if (drops.length === 0 && errors.length === 0) return;
 
@@ -61,11 +59,6 @@ export async function fireDigest() {
   });
 
   await setLastDigestTs(Date.now());
-}
-
-async function getLastDigestTs() {
-  const r = await chrome.storage.local.get(STORAGE_KEYS.DIGEST_LAST);
-  return r[STORAGE_KEYS.DIGEST_LAST] ?? 0;
 }
 
 async function setLastDigestTs(ts) {

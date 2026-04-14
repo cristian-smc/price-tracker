@@ -4,7 +4,7 @@
  *           pause-all / resume-all.
  */
 
-import { displayPrice, createStockBadge, createWarningBadge } from '../components/currency-badge.js';
+import { displayPrice, createWarningBadge } from '../components/currency-badge.js';
 
 /**
  * @param {Record<string, import('../../shared/types').Product>} products
@@ -147,14 +147,17 @@ function buildCard(p, onSelect, onReorder) {
   const inner = document.createElement('div');
   inner.className = 'card-inner';
 
-  // Thumbnail
+  // Thumbnail (or placeholder)
   if (p.thumbnail) {
     const img = document.createElement('img');
     img.className = 'thumb';
     img.src = p.thumbnail;
     img.alt = '';
     img.loading = 'lazy';
+    img.addEventListener('error', () => { img.replaceWith(makeThumbnailPlaceholder()); });
     inner.appendChild(img);
+  } else {
+    inner.appendChild(makeThumbnailPlaceholder());
   }
 
   const body = document.createElement('div');
@@ -180,43 +183,7 @@ function buildCard(p, onSelect, onReorder) {
   row1.appendChild(priceEl);
   body.appendChild(row1);
 
-  // Row 2: badges + meta
-  const row2 = document.createElement('div');
-  row2.className = 'row2';
-
-  row2.appendChild(createStockBadge(p.currentStock ?? 'unknown'));
-
-  // % change from initial price
-  if (p.initialPrice != null && p.currentPrice != null && p.initialPrice !== 0) {
-    const pct = ((p.currentPrice - p.initialPrice) / p.initialPrice) * 100;
-    const pctBadge = document.createElement('span');
-    pctBadge.className = 'badge ' + (pct < -0.5 ? 'pct-down' : pct > 0.5 ? 'pct-up' : 'pct-same');
-    pctBadge.textContent = (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
-    pctBadge.title = 'Change since first tracked';
-    row2.appendChild(pctBadge);
-  }
-
-  if (p.targetPrice !== null) {
-    const target = document.createElement('span');
-    target.title = 'Target price';
-    target.textContent = `↓ ${displayPrice(p.targetPrice, p.currency)}`;
-    target.style.color = isPriceDrop ? 'var(--success)' : 'var(--text-muted)';
-    row2.appendChild(target);
-  }
-
-  if (p.lastChecked) {
-    const when = document.createElement('span');
-    when.textContent = formatRelativeTime(p.lastChecked);
-    row2.appendChild(when);
-  }
-
-  if (p.consecutiveErrors >= 3) {
-    row2.appendChild(createWarningBadge('error', p.consecutiveErrors));
-  } else if (p.consecutiveNulls >= 2) {
-    row2.appendChild(createWarningBadge('drift', p.consecutiveNulls));
-  }
-
-  body.appendChild(row2);
+  body.appendChild(makeRow2(p));
   inner.appendChild(body);
 
   // Drag handle
@@ -266,6 +233,57 @@ function buildCard(p, onSelect, onReorder) {
   });
 
   return card;
+}
+
+function makeThumbnailPlaceholder() {
+  const el = document.createElement('div');
+  el.className = 'thumb-placeholder';
+  el.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 15l-5-5L5 21"/></svg>`;
+  return el;
+}
+
+function makePctBadge(p) {
+  if (p.initialPrice == null || p.currentPrice == null || p.initialPrice === 0) return null;
+  const pct = ((p.currentPrice - p.initialPrice) / p.initialPrice) * 100;
+  const badge = document.createElement('span');
+  let pctClass = 'pct-same';
+  if (pct < -0.5) pctClass = 'pct-down';
+  else if (pct > 0.5) pctClass = 'pct-up';
+  badge.className = `badge ${pctClass}`;
+  badge.textContent = (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
+  badge.title = 'Change since first tracked';
+  return badge;
+}
+
+function makeRow2(p) {
+  const row2 = document.createElement('div');
+  row2.className = 'row2';
+
+  const pctBadge = makePctBadge(p);
+  if (pctBadge) row2.appendChild(pctBadge);
+
+  const isPriceDrop = p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice;
+  if (p.targetPrice !== null) {
+    const target = document.createElement('span');
+    target.title = 'Target price';
+    target.textContent = `↓ ${displayPrice(p.targetPrice, p.currency)}`;
+    target.style.color = isPriceDrop ? 'var(--success)' : 'var(--text-muted)';
+    row2.appendChild(target);
+  }
+
+  if (p.lastChecked) {
+    const when = document.createElement('span');
+    when.textContent = formatRelativeTime(p.lastChecked);
+    row2.appendChild(when);
+  }
+
+  if (p.consecutiveErrors >= 3) {
+    row2.appendChild(createWarningBadge('error', p.consecutiveErrors));
+  } else if (p.consecutiveNulls >= 2) {
+    row2.appendChild(createWarningBadge('drift', p.consecutiveNulls));
+  }
+
+  return row2;
 }
 
 function formatRelativeTime(ts) {

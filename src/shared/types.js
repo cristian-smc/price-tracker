@@ -9,7 +9,6 @@
  *   selectors: { price: string|null },
  *   requiresTabExtraction: boolean,
  *   currentPrice: number|null,
- *   currentStock: string,
  *   currency: string|null,
  *   thumbnail: string|null,
  *   lastChecked: number|null,
@@ -29,13 +28,11 @@
  *   intervalMinutes: number,
  *   enabled: boolean,
  *   notificationEnabled: boolean,
- *   stockOnly: boolean,
- *   selectors: { price: string|null, stock: string|null },
+ *   selectors: { price: string|null },
  *   requiresTabExtraction: boolean,
  *   sources: Source[],
  *   bestSourceId: string|null,
  *   currentPrice: number|null,
- *   currentStock: string,
  *   initialPrice: number|null,
  *   lowestPrice: number|null,
  *   highestPrice: number|null,
@@ -47,7 +44,7 @@
  *   createdAt: number
  * }} Product
  *
- * @typedef {{ ts: number, price: number, stock: string }} HistoryPoint
+ * @typedef {{ ts: number, price: number }} HistoryPoint
  *
  * @typedef {{
  *   defaultInterval: number,
