@@ -140,7 +140,10 @@ async function checkOneSource(source) {
 async function doFetch(target) {
   if (target.requiresTabExtraction) return tabFetchAndExtract(target);
   const result = await fetchAndExtract(target);
-  if (result.requiresTabExtraction) {
+  if (result.requiresTabExtraction || result.error) {
+    // Fetch failed (blocked, 403, SPA shell, etc.) — fall back to a real tab.
+    // If the tab succeeds, requiresTabExtraction:true is persisted on the source
+    // so future checks go directly to tab extraction without retrying the fetch.
     return tabFetchAndExtract({ ...target, requiresTabExtraction: true });
   }
   return result;

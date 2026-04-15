@@ -144,15 +144,16 @@ async function showAdd(prefillSelector = null) {
 
 // ── View: edit product ────────────────────────────────────────────────────
 
-function showEdit(product) {
+function showEdit(product, prefillSelector = null) {
   const view = renderAddProduct({
     product,
+    prefillSelector,
     onSave: async (data) => {
       await send({ type: MSG.UPDATE_PRODUCT, id: product.id, data });
       showList();
     },
     onCancel: () => showDetail(product.id),
-    onStartPicker: startPicker,
+    onStartPicker: () => startPicker(product.id),
   });
   currentAddProductView = view;
   setView(view);
@@ -160,9 +161,10 @@ function showEdit(product) {
 
 // ── Element picker ────────────────────────────────────────────────────────
 
-async function startPicker() {
+async function startPicker(editProductId = null) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return;
+  if (editProductId) await chrome.storage.local.set({ _pickerEditId: editProductId });
   await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     files: ['src/content/picker.js'],
@@ -195,10 +197,16 @@ function setView(el) {
 await checkNotifPermission();
 await applyTheme();
 
-const { _pickerResult, _notifClick } = await chrome.storage.local.get(['_pickerResult', '_notifClick']);
+const { _pickerResult, _pickerEditId, _notifClick } = await chrome.storage.local.get(['_pickerResult', '_pickerEditId', '_notifClick']);
 if (_notifClick) {
   await chrome.storage.local.remove('_notifClick');
   await showDetail(_notifClick);
+} else if (_pickerResult && _pickerEditId) {
+  await chrome.storage.local.remove(['_pickerResult', '_pickerEditId']);
+  const { products } = await send({ type: MSG.GET_PRODUCTS });
+  const product = products?.[_pickerEditId];
+  if (product) showEdit(product, _pickerResult);
+  else await showAdd(_pickerResult);
 } else if (_pickerResult) {
   await chrome.storage.local.remove('_pickerResult');
   await showAdd(_pickerResult);

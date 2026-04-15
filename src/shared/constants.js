@@ -34,11 +34,20 @@ export const DEFAULT_SETTINGS = {
 export const HEURISTIC_SELECTORS = [
   '[itemprop="price"]',
   '[data-testid="price"]',
+  '[data-testid*="price"]',
   '[data-price]',
   '.price',
   '.product-price',
   '.offer-price',
   '.sale-price',
+  // Generic class-contains (catches flight sites, CSS-module class names, etc.)
+  '[class*="price-text"]',
+  '[class*="priceText"]',
+  '[class*="PriceText"]',
+  '[class*="price-amount"]',
+  '[class*="priceAmount"]',
+  '[class*="total-price"]',
+  '[class*="totalPrice"]',
   // Amazon
   '.a-price .a-offscreen',
   '#priceblock_ourprice',

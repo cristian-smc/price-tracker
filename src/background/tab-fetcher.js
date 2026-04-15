@@ -5,7 +5,8 @@
  * Strategy:
  *  1. Open a small background popup. SPAs that check the Page Visibility API
  *     require an active (non-hidden) tab to render their content.
- *  2. Prefer incognito to avoid session-cookie interference on some sites.
+ *  2. Open in a normal (non-incognito) tab so session cookies are present,
+ *     avoiding GDPR consent walls that appear when cookies are missing.
  *  3. Inject a content script that installs a MutationObserver and waits
  *     for a price element to appear (up to TAB_TIMEOUT_MS).
  *  4. The script sends back { price, selector } via chrome.runtime.sendMessage.
@@ -16,7 +17,9 @@
 
 import { HEURISTIC_SELECTORS } from '../shared/constants.js';
 
-const TAB_TIMEOUT_MS = 20_000;
+// Total time budget from window creation. Must exceed max page-load time + MAX_WAIT
+// (page load ≤ ~20 s + MAX_WAIT 15 s = 35 s, so 45 s gives a safe margin).
+const TAB_TIMEOUT_MS = 45_000;
 
 /**
  * @param {import('../shared/types').Product} product
@@ -25,26 +28,51 @@ export async function tabFetchAndExtract(product) {
   let tabId = null;
   let windowId = null;
   let previousTabId = null;
+  let tabsListener = null;
+  let msgListener  = null;
+
   try {
     const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     previousTabId = currentTab?.id ?? null;
 
-    // Prefer incognito — sites like Wizz Air return "Critical error" when they
-    // detect existing session cookies from a logged-in/prior session. A fresh
-    // incognito context has no cookies and loads normally.
-    // Fallback to a normal active tab if the user hasn't enabled incognito access.
-    const incognitoAllowed = await chrome.extension.isAllowedIncognitoAccess();
-    if (incognitoAllowed) {
-      const win = await chrome.windows.create({ url: product.url, incognito: true, focused: false, type: 'popup', width: 800, height: 600 });
-      tabId = win.tabs[0].id;
-      windowId = win.id;
-    } else {
-      const tab = await chrome.tabs.create({ url: product.url, active: true });
-      tabId = tab.id;
-    }
+    // See chrome.windows.create call below — off-screen popup, no taskbar button.
+    // Position the popup far off-screen so it is invisible to the user.
+    // Popup windows have no taskbar button, so this is truly silent.
+    // We keep type:'popup' (not minimized) so document.visibilityState stays
+    // 'visible' — SPAs like momondo won't load flight results when hidden.
+    const win = await chrome.windows.create({ url: product.url, focused: false, type: 'popup', width: 1024, height: 768, left: -10000, top: -10000 });
+    tabId = win.tabs[0].id;
+    windowId = win.id;
 
     const result = await Promise.race([
-      waitForTabExtraction(tabId, product),
+      // Re-inject on every status=complete event so redirects are handled:
+      // SPAs often fire complete once on the shell/redirect page and again
+      // after the real content page loads — we must not remove the listener
+      // on the first fire.
+      new Promise((resolve) => {
+        tabsListener = (changedTabId, changeInfo) => {
+          if (changedTabId !== tabId || changeInfo.status !== 'complete') return;
+
+          // Each new complete may be a different page — swap the message listener.
+          if (msgListener) {
+            chrome.runtime.onMessage.removeListener(msgListener);
+            msgListener = null;
+          }
+
+          const args = [{ tabId, userSelector: product.selectors?.price ?? null, selectors: HEURISTIC_SELECTORS }];
+          chrome.scripting.executeScript({ target: { tabId }, func: tabExtractor, args })
+            .catch(() => {}); // ignore injection errors on restricted / transient pages
+
+          msgListener = (msg) => {
+            if (msg.type !== '__PW_TAB_RESULT' || msg.tabId !== tabId) return;
+            chrome.runtime.onMessage.removeListener(msgListener);
+            msgListener = null;
+            resolve(msg);
+          };
+          chrome.runtime.onMessage.addListener(msgListener);
+        };
+        chrome.tabs.onUpdated.addListener(tabsListener);
+      }),
       timeout(TAB_TIMEOUT_MS, 'Tab extraction timed out'),
     ]);
 
@@ -64,49 +92,17 @@ export async function tabFetchAndExtract(product) {
       error: err.message,
     };
   } finally {
+    // Always clean up both listeners regardless of how the promise settled.
+    if (tabsListener) chrome.tabs.onUpdated.removeListener(tabsListener);
+    if (msgListener)  chrome.runtime.onMessage.removeListener(msgListener);
     if (windowId !== null) chrome.windows.remove(windowId).catch(() => {});
     else if (tabId !== null) chrome.tabs.remove(tabId).catch(() => {});
     if (previousTabId !== null) chrome.tabs.update(previousTabId, { active: true }).catch(() => {});
   }
 }
 
-// ── Internal helpers ──────────────────────────────────────────────────────
-
 /**
- * Injects extraction script into tab and waits for the result message.
- */
-function waitForTabExtraction(tabId, product) {
-  return new Promise((resolve, reject) => {
-    // Wait for tab to finish loading before injecting
-    const loadListener = (changedTabId, changeInfo) => {
-      if (changedTabId !== tabId || changeInfo.status !== 'complete') return;
-      chrome.tabs.onUpdated.removeListener(loadListener);
-      injectAndListen(tabId, product, resolve, reject);
-    };
-    chrome.tabs.onUpdated.addListener(loadListener);
-  });
-}
-
-function injectAndListen(tabId, product, resolve, reject) {
-  const args = [{ tabId, userSelector: product.selectors?.price ?? null, selectors: HEURISTIC_SELECTORS }];
-
-  chrome.scripting.executeScript({
-    target: { tabId },
-    func: tabExtractor,
-    args,
-    world: 'MAIN',
-  }).catch(reject);
-
-  function onMessage(msg) {
-    if (msg.type !== '__PW_TAB_RESULT' || msg.tabId !== tabId) return;
-    chrome.runtime.onMessage.removeListener(onMessage);
-    resolve(msg);
-  }
-  chrome.runtime.onMessage.addListener(onMessage);
-}
-
-/**
- * Runs inside the page context (world: MAIN). No module imports available.
+ * Runs as a content script (isolated world) — has full Chrome API access.
  * Receives serialised args — cannot close over outer-scope variables.
  */
 function tabExtractor({ tabId, userSelector, selectors }) {
@@ -116,7 +112,7 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   if (globalThis.__pwInjected) return;
   globalThis.__pwInjected = true;
 
-  const MAX_WAIT = 12000;
+  const MAX_WAIT = 15000;
   const start = Date.now();
 
   // ── Cookie / GDPR consent auto-dismissal ─────────────────────────────────
@@ -213,12 +209,43 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     return Number.isNaN(f) ? null : Math.round(f * 100);
   }
 
+  // Text-scan fallback: find the most prominent visible element whose text
+  // directly contains a price pattern. Useful for sites (e.g. flight search)
+  // with dynamic/hashed CSS class names that no selector can reliably target.
+  function tryExtractByText() { // NOSONAR
+    const numThenCurr = /(?:^|[\s(])(\d[\d\s.,]{0,9}\s*(?:€|lei|RON|EUR|GBP|[£$]))(?:[\s)]|$)/i;
+    const currThenNum = /(?:^|[\s(])([€£$]\s*\d[\d\s.,]{0,9})(?:[\s)]|$)/i;
+    let best = null;
+    let bestFontSize = 0;
+    const candidates = document.querySelectorAll('span, div, p, strong, b, td, h1, h2, h3');
+    for (const el of candidates) {
+      try {
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) continue;
+        const text = (el.textContent ?? '').trim();
+        if (!text || text.length > 40) continue;
+        const m = text.match(numThenCurr) ?? text.match(currThenNum);
+        if (!m) continue;
+        const fs = Number.parseFloat(getComputedStyle(el).fontSize) || 0;
+        if (fs > bestFontSize) {
+          bestFontSize = fs;
+          best = { raw: m[1].trim(), selectorUsed: '_text_scan' };
+        }
+      } catch { /* skip */ }
+    }
+    return best;
+  }
+
   function send(data) {
     timers.forEach(clearTimeout);
     chrome.runtime.sendMessage({ type: '__PW_TAB_RESULT', tabId, ...data });
   }
 
-  const initial = tryExtract();
+  function tryAll() { // NOSONAR
+    return tryExtract() ?? tryExtractByText();
+  }
+
+  const initial = tryAll();
   if (initial) {
     const price = parseMinorUnits(initial.raw);
     if (price > 0) { send({ price, currency: detectCurrency(initial.raw) ?? 'USD', selectorUsed: initial.selectorUsed, strategy: 4 }); return; }
@@ -226,7 +253,7 @@ function tabExtractor({ tabId, userSelector, selectors }) {
 
   const observer = new MutationObserver(() => {
     tryDismissConsent();
-    const r = tryExtract();
+    const r = tryAll();
     if (r) {
       const price = parseMinorUnits(r.raw);
       if (price > 0) {
