@@ -37,9 +37,9 @@ export async function tabFetchAndExtract(product) {
     previousTabId = currentTab?.id ?? null;
 
     // Inject a MAIN-world content script at document_start that overrides
-    // document.visibilityState → 'visible'. This lets us create the window
-    // minimized (no flash, no taskbar button) while SPAs still load their content.
-    // Falls back to a visible popup if registration fails (API < Chrome 96).
+    // document.visibilityState → 'visible' so SPAs render content even in
+    // an inactive background tab. persistAcrossSessions:false prevents
+    // script accumulation if the service worker is killed before cleanup.
     visScriptId = `pw-vis-${Date.now()}`;
     try {
       const { hostname } = new URL(product.url);
@@ -49,22 +49,21 @@ export async function tabFetchAndExtract(product) {
         js: ['src/content/visibility-override.js'],
         world: 'MAIN',
         runAt: 'document_start',
+        persistAcrossSessions: false,
       }]);
     } catch {
-      visScriptId = null; // fall back to visible popup
+      visScriptId = null;
     }
 
-    // minimized state and width/height are mutually exclusive in the Chrome API.
-    const win = await chrome.windows.create({
+    // Open an inactive background tab in the current window — no new window is
+    // created, so there is no visible popup or taskbar flash on any platform.
+    // windowId stays null so the finally block uses chrome.tabs.remove.
+    const tab = await chrome.tabs.create({
       url: product.url,
-      focused: false,
-      type: 'popup',
-      ...(visScriptId
-        ? { state: 'minimized' }
-        : { width: 800, height: 600 }),
+      active: false,
+      ...(currentTab?.windowId != null && { windowId: currentTab.windowId }),
     });
-    tabId = win.tabs[0].id;
-    windowId = win.id;
+    tabId = tab.id;
 
     const result = await Promise.race([
       // Re-inject on every status=complete event so redirects are handled:
