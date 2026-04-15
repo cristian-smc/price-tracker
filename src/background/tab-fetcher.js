@@ -209,14 +209,16 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     return Number.isNaN(f) ? null : Math.round(f * 100);
   }
 
-  // Text-scan fallback: find the most prominent visible element whose text
-  // directly contains a price pattern. Useful for sites (e.g. flight search)
-  // with dynamic/hashed CSS class names that no selector can reliably target.
+  // Text-scan fallback: collect all visible price-like elements and return the
+  // lowest price found. "Lowest" is correct for aggregator pages (flight/hotel
+  // search) that show many results — we want the best available deal, not just
+  // the first or largest-font price. A minimum font size filters out footnotes.
   function tryExtractByText() { // NOSONAR
     const numThenCurr = /(?:^|[\s(])(\d[\d\s.,]{0,9}\s*(?:€|lei|RON|EUR|GBP|[£$]))(?:[\s)]|$)/i;
     const currThenNum = /(?:^|[\s(])([€£$]\s*\d[\d\s.,]{0,9})(?:[\s)]|$)/i;
-    let best = null;
-    let bestFontSize = 0;
+    const MIN_FONT_PX = 12;
+    let lowestPrice = null;
+    let lowestRaw   = null;
     const candidates = document.querySelectorAll('span, div, p, strong, b, td, h1, h2, h3');
     for (const el of candidates) {
       try {
@@ -226,14 +228,16 @@ function tabExtractor({ tabId, userSelector, selectors }) {
         if (!text || text.length > 40) continue;
         const m = text.match(numThenCurr) ?? text.match(currThenNum);
         if (!m) continue;
-        const fs = Number.parseFloat(getComputedStyle(el).fontSize) || 0;
-        if (fs > bestFontSize) {
-          bestFontSize = fs;
-          best = { raw: m[1].trim(), selectorUsed: '_text_scan' };
+        if ((Number.parseFloat(getComputedStyle(el).fontSize) || 0) < MIN_FONT_PX) continue;
+        const price = parseMinorUnits(m[1].trim());
+        if (!price || price <= 0) continue;
+        if (lowestPrice === null || price < lowestPrice) {
+          lowestPrice = price;
+          lowestRaw   = m[1].trim();
         }
       } catch { /* skip */ }
     }
-    return best;
+    return lowestRaw ? { raw: lowestRaw, selectorUsed: '_text_scan' } : null;
   }
 
   function send(data) {
