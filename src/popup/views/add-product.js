@@ -65,7 +65,11 @@ export function renderAddProduct({ product, prefillSelector = null, prefillUrl =
   for (const mins of CHECK_INTERVALS) {
     const opt = document.createElement('option');
     opt.value = String(mins);
-    opt.textContent = mins >= 60 ? `${mins / 60}h` : `${mins} min`;
+    let label;
+    if (mins >= 1440)     label = `${mins / 1440} day`;
+    else if (mins >= 60)  label = `${mins / 60}h`;
+    else                  label = `${mins} min`;
+    opt.textContent = label;
     if ((product?.intervalMinutes ?? 15) === mins) opt.selected = true;
     intervalSelect.appendChild(opt);
   }

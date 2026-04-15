@@ -110,7 +110,7 @@ export function renderProductDetail({
   meta.className = 'meta-grid';
 
   meta.appendChild(makeMetaItem('Check interval', `Every ${product.intervalMinutes} min`));
-  meta.appendChild(makeMetaItem('Last checked', product.lastChecked ? formatDate(product.lastChecked) : '—'));
+  meta.appendChild(makeMetaItem('Last checked', product.lastChecked ? formatRelativeTime(product.lastChecked) : '—'));
   meta.appendChild(makeMetaItem('History points', String(history.length)));
 
   if (product.consecutiveErrors > 0) {
@@ -366,9 +366,12 @@ function makeMetaItem(label, valueOrEl) {
   return item;
 }
 
-function formatDate(ts) {
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  }).format(new Date(ts));
+function formatRelativeTime(ts) {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1)   return 'just now';
+  if (mins < 60)  return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)   return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }

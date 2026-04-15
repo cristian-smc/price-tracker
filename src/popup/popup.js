@@ -58,11 +58,14 @@ async function showList() {
     onAdd: showAdd,
     onPauseAll: async () => {
       await send({ type: MSG.PAUSE_ALL });
-      showList();
+      await showList();
     },
     onResumeAll: async () => {
       await send({ type: MSG.RESUME_ALL });
-      showList();
+      await showList();
+    },
+    onCheckAll: async () => {
+      await send({ type: MSG.CHECK_ALL });
     },
     onReorder: async (id, newOrder) => {
       await send({ type: MSG.UPDATE_PRODUCT, id, data: { sortOrder: newOrder } });
@@ -192,8 +195,11 @@ function setView(el) {
 await checkNotifPermission();
 await applyTheme();
 
-const { _pickerResult } = await chrome.storage.local.get('_pickerResult');
-if (_pickerResult) {
+const { _pickerResult, _notifClick } = await chrome.storage.local.get(['_pickerResult', '_notifClick']);
+if (_notifClick) {
+  await chrome.storage.local.remove('_notifClick');
+  await showDetail(_notifClick);
+} else if (_pickerResult) {
   await chrome.storage.local.remove('_pickerResult');
   await showAdd(_pickerResult);
 } else {

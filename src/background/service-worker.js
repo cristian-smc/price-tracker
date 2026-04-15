@@ -43,8 +43,15 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 chrome.notifications.onClicked.addListener(async (notificationId) => {
   const parts = notificationId.split('_');
   if (parts.length >= 2) {
-    const product = await getProduct(parts[1]);
-    if (product?.url) await chrome.tabs.create({ url: product.canonicalUrl ?? product.url });
+    const productId = parts[1];
+    // Store the target product ID so the popup can open directly to its detail view
+    await chrome.storage.local.set({ _notifClick: productId });
+    await chrome.action.openPopup().catch(() => {
+      // openPopup() requires a focused window — fall back to opening the product URL
+      getProduct(productId).then((p) => {
+        if (p?.url) chrome.tabs.create({ url: p.canonicalUrl ?? p.url });
+      });
+    });
   }
   chrome.notifications.clear(notificationId);
 });
@@ -69,6 +76,7 @@ async function handleMessage(msg) {
     case MSG.DELETE_PRODUCT:  return handleDeleteProduct(msg.id);
     case MSG.CHECK_NOW:       return handleCheckNow(msg.id);
     case MSG.PAUSE_ALL:       return handlePauseAll();
+    case MSG.CHECK_ALL:       return handleCheckAll();
     case MSG.RESUME_ALL:      return handleResumeAll();
     case MSG.IMPORT_URLS:     return handleImportUrls(msg.urls);
     case MSG.ADD_SOURCE:      return handleAddSource(msg.productId, msg.url);
@@ -138,23 +146,34 @@ async function handleCheckNow(id) {
   return { ok: true };
 }
 
+async function handleCheckAll() {
+  const products = await getProducts();
+  const enabled = Object.values(products).filter((p) => p.enabled);
+  // Fire checks concurrently but don't await — checks run in background
+  for (const p of enabled) checkProduct(p.id);
+  return { ok: true, count: enabled.length };
+}
+
 async function handlePauseAll() {
   const products = await getProducts();
-  await Promise.all(Object.values(products).map(async (p) => {
-    await saveProduct({ ...p, enabled: false });
-    await clearAlarm(p.id);
-  }));
+  const entries = Object.values(products);
+  // Batch all writes into a single sync set to avoid quota limits
+  const batch = {};
+  for (const p of entries) batch[`p_${p.id}`] = { ...p, enabled: false };
+  await chrome.storage.sync.set(batch);
+  await Promise.all(entries.map((p) => clearAlarm(p.id)));
   await updateBadge();
   return { ok: true };
 }
 
 async function handleResumeAll() {
   const products = await getProducts();
-  await Promise.all(Object.values(products).map(async (p) => {
-    const resumed = { ...p, enabled: true };
-    await saveProduct(resumed);
-    await syncAlarm(resumed);
-  }));
+  const entries = Object.values(products);
+  // Batch all writes into a single sync set to avoid quota limits
+  const batch = {};
+  for (const p of entries) batch[`p_${p.id}`] = { ...p, enabled: true };
+  await chrome.storage.sync.set(batch);
+  await Promise.all(entries.map((p) => syncAlarm({ ...p, enabled: true })));
   await updateBadge();
   return { ok: true };
 }

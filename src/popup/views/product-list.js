@@ -19,7 +19,7 @@ import { displayPrice, createWarningBadge } from '../components/currency-badge.j
  * }} handlers
  */
 export function renderProductList(products, {
-  onSelect, onAdd, onPauseAll, onResumeAll, onReorder,
+  onSelect, onAdd, onPauseAll, onResumeAll, onCheckAll, onReorder,
   sortBy = 'created', filterBy = 'all',
 }) {
   const entries = Object.values(products);
@@ -32,9 +32,10 @@ export function renderProductList(products, {
     empty.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path stroke-linecap="round" stroke-linejoin="round"
-          d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19V5a2 2 0 012-2h12a2 2 0 012 2v14"/>
+          d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
       </svg>
-      <p>No products tracked yet.<br>Click <strong>+</strong> to add one.</p>
+      <p><strong>Start tracking prices</strong></p>
+      <p style="font-size:12px;color:var(--text-muted);margin-top:4px;">Open any product page, then click <strong>+</strong> to add it.<br>PriceWatch will check the price automatically<br>and notify you when it drops.</p>
     `;
     wrap.appendChild(empty);
     return wrap;
@@ -88,11 +89,24 @@ export function renderProductList(products, {
   resumeAllBtn.textContent = 'Resume all';
   resumeAllBtn.addEventListener('click', onResumeAll);
 
+  const checkAllBtn = document.createElement('button');
+  checkAllBtn.className = 'btn-sm';
+  checkAllBtn.type = 'button';
+  checkAllBtn.textContent = 'Check all';
+  checkAllBtn.addEventListener('click', async () => {
+    checkAllBtn.disabled = true;
+    checkAllBtn.textContent = 'Checking…';
+    await onCheckAll();
+    checkAllBtn.textContent = 'Check all';
+    checkAllBtn.disabled = false;
+  });
+
   const spacer = document.createElement('div');
   spacer.className = 'spacer';
 
   toolbar.appendChild(pauseAllBtn);
   toolbar.appendChild(resumeAllBtn);
+  toolbar.appendChild(checkAllBtn);
   toolbar.appendChild(spacer);
   wrap.appendChild(toolbar);
 

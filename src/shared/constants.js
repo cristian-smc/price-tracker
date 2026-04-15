@@ -11,7 +11,7 @@ export const ALARM_PREFIX  = 'pricecheck_';
 export const ALARM_DIGEST  = 'daily_digest';
 
 // Check intervals in minutes (shown in UI)
-export const CHECK_INTERVALS = [5, 15, 30, 60];
+export const CHECK_INTERVALS = [5, 15, 30, 60, 720, 1440];
 
 // Default settings
 export const DEFAULT_SETTINGS = {
@@ -61,6 +61,7 @@ export const MSG = {
   UPDATE_PRODUCT: 'UPDATE_PRODUCT',
   DELETE_PRODUCT: 'DELETE_PRODUCT',
   CHECK_NOW: 'CHECK_NOW',
+  CHECK_ALL: 'CHECK_ALL',
   PAUSE_ALL: 'PAUSE_ALL',
   RESUME_ALL: 'RESUME_ALL',
   GET_HISTORY: 'GET_HISTORY',
