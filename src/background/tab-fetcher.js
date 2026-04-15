@@ -30,17 +30,39 @@ export async function tabFetchAndExtract(product) {
   let previousTabId = null;
   let tabsListener = null;
   let msgListener  = null;
+  let visScriptId  = null;
 
   try {
     const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     previousTabId = currentTab?.id ?? null;
 
-    // See chrome.windows.create call below — off-screen popup, no taskbar button.
-    // Position the popup far off-screen so it is invisible to the user.
-    // Popup windows have no taskbar button, so this is truly silent.
-    // We keep type:'popup' (not minimized) so document.visibilityState stays
-    // 'visible' — SPAs like momondo won't load flight results when hidden.
-    const win = await chrome.windows.create({ url: product.url, focused: false, type: 'popup', width: 1024, height: 768, left: -10000, top: -10000 });
+    // Inject a MAIN-world content script at document_start that overrides
+    // document.visibilityState → 'visible'. This lets us create the window
+    // minimized (no flash, no taskbar button) while SPAs still load their content.
+    // Falls back to a visible popup if registration fails (API < Chrome 96).
+    visScriptId = `pw-vis-${Date.now()}`;
+    try {
+      const { hostname } = new URL(product.url);
+      await chrome.scripting.registerContentScripts([{
+        id: visScriptId,
+        matches: [`*://${hostname}/*`],
+        js: ['src/content/visibility-override.js'],
+        world: 'MAIN',
+        runAt: 'document_start',
+      }]);
+    } catch {
+      visScriptId = null; // fall back to visible popup
+    }
+
+    // minimized state and width/height are mutually exclusive in the Chrome API.
+    const win = await chrome.windows.create({
+      url: product.url,
+      focused: false,
+      type: 'popup',
+      ...(visScriptId
+        ? { state: 'minimized' }
+        : { width: 800, height: 600 }),
+    });
     tabId = win.tabs[0].id;
     windowId = win.id;
 
@@ -98,6 +120,7 @@ export async function tabFetchAndExtract(product) {
     if (windowId !== null) chrome.windows.remove(windowId).catch(() => {});
     else if (tabId !== null) chrome.tabs.remove(tabId).catch(() => {});
     if (previousTabId !== null) chrome.tabs.update(previousTabId, { active: true }).catch(() => {});
+    if (visScriptId) chrome.scripting.unregisterContentScripts({ ids: [visScriptId] }).catch(() => {});
   }
 }
 
@@ -109,9 +132,6 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   // NOTE: helper functions must stay nested here —
   // executeScript serialises only this function into the page context, so
   // module-level helpers are unreachable from the injected code.
-  if (globalThis.__pwInjected) return;
-  globalThis.__pwInjected = true;
-
   const MAX_WAIT = 15000;
   const start = Date.now();
 
@@ -240,7 +260,10 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     return lowestRaw ? { raw: lowestRaw, selectorUsed: '_text_scan' } : null;
   }
 
+  let sent = false;
   function send(data) {
+    if (sent) return;
+    sent = true;
     timers.forEach(clearTimeout);
     chrome.runtime.sendMessage({ type: '__PW_TAB_RESULT', tabId, ...data });
   }
@@ -272,6 +295,21 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     }
   });
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+  // Guaranteed send: if the page stops mutating before MAX_WAIT (static page after
+  // initial SPA load, or price never found), this timer fires and sends a final answer.
+  // Without this, the observer MAX_WAIT check inside the callback never runs
+  // on a "quiet" page, causing the 45 s outer timeout to fire instead (→ error).
+  timers.push(setTimeout(() => {
+    observer.disconnect();
+    const last = tryAll();
+    const price = last ? parseMinorUnits(last.raw) : null;
+    if (price > 0) {
+      send({ price, currency: detectCurrency(last.raw) ?? 'USD', selectorUsed: last.selectorUsed, strategy: 4 });
+    } else {
+      send({ price: null, currency: null, selectorUsed: null, strategy: null });
+    }
+  }, Math.max(MAX_WAIT - (Date.now() - start), 500)));
 }
 
 function timeout(ms, msg) {

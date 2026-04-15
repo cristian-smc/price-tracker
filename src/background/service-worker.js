@@ -141,7 +141,10 @@ async function handleDeleteProduct(id) {
 async function handleCheckNow(id) {
   const product = await getProduct(id);
   if (!product) return { error: 'Product not found' };
-  await saveProduct({ ...product, lastNotified: null });
+  // Reset error state and cooldown so the check always runs and notifies, even if
+  // the product was auto-disabled or a notification was recently delivered.
+  await saveProduct({ ...product, lastNotified: null, consecutiveErrors: 0, enabled: true });
+  await syncAlarm({ ...product, enabled: true });
   await checkProduct(id);
   return { ok: true };
 }

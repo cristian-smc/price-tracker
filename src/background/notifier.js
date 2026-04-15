@@ -35,7 +35,7 @@ export async function maybeNotify(product, previousPrice) {
   });
 
   if (settings.soundEnabled) playSound();
-  if (settings.mobilePushUrl) sendMobilePush(settings.mobilePushUrl, title, message);
+  if (settings.mobilePushUrl) await sendMobilePush(settings.mobilePushUrl, title, message);
 
   return notifId;
 }
@@ -69,10 +69,17 @@ function playSound() {
   chrome.runtime.sendMessage({ type: 'PLAY_SOUND' }).catch(() => {});
 }
 
-function sendMobilePush(url, title, message) {
-  fetch(url, {
-    method: 'POST',
-    headers: { 'Title': title, 'Content-Type': 'text/plain' },
-    body: message,
-  }).catch(() => {}); // fire-and-forget
+async function sendMobilePush(url, title, message) {
+  try {
+    await fetch(url, {
+      method: 'POST',
+      // HTTP headers are ISO-8859-1 only — URL-encode the title so Unicode
+      // characters (arrows, accents, currency symbols) don't throw.
+      // ntfy.sh decodes percent-encoded Title headers automatically.
+      headers: { 'Title': encodeURIComponent(title), 'Content-Type': 'text/plain; charset=utf-8' },
+      body: message,
+    });
+  } catch {
+    // network failure — push is best-effort, don't surface to user
+  }
 }
