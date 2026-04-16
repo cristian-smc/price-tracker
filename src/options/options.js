@@ -53,6 +53,8 @@ async function loadSettings() {
   document.getElementById('history-max').value = String(settings.historyMaxPoints ?? 500);
   document.getElementById('affiliate-amazon').value = settings.affiliateAmazonTag ?? '';
   document.getElementById('affiliate-skimlinks').value = settings.affiliateSkimlinksId ?? '';
+  document.getElementById('gist-token').value = settings.gistToken ?? '';
+  document.getElementById('gist-id').value = settings.gistId ?? '';
 }
 
 function setSelectValue(id, value) {
@@ -76,6 +78,7 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     historyMaxPoints: Math.max(50, Math.min(5000, Number(document.getElementById('history-max').value))),
     affiliateAmazonTag: document.getElementById('affiliate-amazon').value.trim(),
     affiliateSkimlinksId: document.getElementById('affiliate-skimlinks').value.trim(),
+    gistToken: document.getElementById('gist-token').value.trim(),
   };
 
   try {
@@ -127,6 +130,29 @@ document.getElementById('btn-export-csv').addEventListener('click', async () => 
     showStatus('data-status', 'CSV exported.', 'ok');
   } catch (err) {
     showStatus('data-status', `CSV export failed: ${err.message}`, 'err');
+  }
+});
+
+// ── Export for Termux companion ───────────────────────────────────────────
+
+document.getElementById('btn-export-termux').addEventListener('click', async () => {
+  try {
+    const { products } = await send({ type: MSG.GET_PRODUCTS });
+    const list = Object.values(products ?? {}).map((p) => ({
+      id: p.id,
+      name: p.name,
+      url: p.canonicalUrl ?? p.url,
+      targetPrice: p.targetPrice ?? null,
+      currency: p.currency ?? 'USD',
+      enabled: p.enabled,
+      intervalMinutes: p.intervalMinutes,
+      priceSelector: p.selectors?.price ?? null,
+    }));
+    const payload = { exported: new Date().toISOString(), products: list };
+    downloadBlob(JSON.stringify(payload, null, 2), 'pricewatch.json', 'application/json');
+    showStatus('data-status', `Exported ${list.length} product(s) for Termux companion.`, 'ok');
+  } catch (err) {
+    showStatus('data-status', `Export failed: ${err.message}`, 'err');
   }
 });
 
@@ -252,6 +278,33 @@ function csvEscape(str) {
   }
   return s;
 }
+
+// ── Gist sync ─────────────────────────────────────────────────────────────
+
+document.getElementById('btn-gist-sync').addEventListener('click', async () => {
+  const token = document.getElementById('gist-token').value.trim();
+  if (!token) {
+    showStatus('gist-status', 'Enter a GitHub token first.', 'err');
+    return;
+  }
+  // Save token first so the service worker can use it
+  await send({ type: MSG.UPDATE_SETTINGS, data: { gistToken: token } });
+  showStatus('gist-status', 'Syncing…', 'ok');
+  const result = await send({ type: MSG.GIST_SYNC });
+  if (result?.ok) {
+    document.getElementById('gist-id').value = result.gistId ?? '';
+    showStatus('gist-status', `Synced! Gist ID: ${result.gistId}`, 'ok');
+  } else {
+    showStatus('gist-status', `Sync failed: ${result?.error ?? 'unknown error'}`, 'err');
+  }
+});
+
+document.getElementById('btn-gist-clear').addEventListener('click', async () => {
+  document.getElementById('gist-token').value = '';
+  document.getElementById('gist-id').value = '';
+  await send({ type: MSG.UPDATE_SETTINGS, data: { gistToken: '', gistId: '' } });
+  showStatus('gist-status', 'Cleared.', 'ok');
+});
 
 // ── Init ──────────────────────────────────────────────────────────────────
 

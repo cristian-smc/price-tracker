@@ -1,0 +1,15 @@
+{
+  "name": "pricewatch-companion",
+  "version": "1.0.0",
+  "description": "Termux companion for PriceWatch Chrome extension — checks prices and notifies via termux-notification",
+  "type": "module",
+  "scripts": {
+    "start": "node check.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

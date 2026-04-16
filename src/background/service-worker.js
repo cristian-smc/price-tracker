@@ -9,6 +9,7 @@ import { syncDigestAlarm, fireDigest } from './digest.js';
 import { getProducts, getProduct, saveProduct, deleteProduct, getHistory, getSettings, updateSettings } from '../shared/storage.js';
 import { generateId, productIdFromAlarm } from '../shared/utils.js';
 import { MSG, DEFAULT_SETTINGS, ALARM_DIGEST } from '../shared/constants.js';
+import { syncToGist } from './gist-sync.js';
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,7 @@ async function handleMessage(msg) {
     case MSG.IMPORT_URLS:     return handleImportUrls(msg.urls);
     case MSG.ADD_SOURCE:      return handleAddSource(msg.productId, msg.url);
     case MSG.REMOVE_SOURCE:   return handleRemoveSource(msg.productId, msg.sourceId);
+    case MSG.GIST_SYNC:       return syncToGist();
     case MSG.GET_HISTORY:     return { points: await getHistory(msg.id) };
     case MSG.GET_SETTINGS:    return { settings: await getSettings() };
     case MSG.UPDATE_SETTINGS: {
@@ -94,6 +96,9 @@ async function handleMessage(msg) {
 }
 
 // ── Message handlers ──────────────────────────────────────────────────────────
+
+/** Fire-and-forget Gist sync — never blocks the caller. */
+function triggerGistSync() { syncToGist().catch(() => {}); }
 
 async function handleAddProduct(data) {
   const existing = await getProducts();
@@ -118,6 +123,7 @@ async function handleAddProduct(data) {
   await saveProduct(product);
   await syncAlarm(product);
   checkProduct(product.id);
+  triggerGistSync();
   return { product };
 }
 
@@ -128,6 +134,7 @@ async function handleUpdateProduct(id, data) {
   await saveProduct(updated);
   await syncAlarm(updated);
   await updateBadge();
+  triggerGistSync();
   return { product: updated };
 }
 
@@ -135,6 +142,7 @@ async function handleDeleteProduct(id) {
   await clearAlarm(id);
   await deleteProduct(id);
   await updateBadge();
+  triggerGistSync();
   return { ok: true };
 }
 
@@ -207,6 +215,7 @@ async function handleImportUrls(urls) {
     added.push(product);
     existingUrls.add(url);
   }
+  if (added.length > 0) triggerGistSync();
   return { added: added.length };
 }
 

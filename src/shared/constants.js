@@ -28,6 +28,8 @@ export const DEFAULT_SETTINGS = {
   mobilePushUrl: '',        // ntfy.sh topic URL or any POST webhook
   affiliateAmazonTag: '',   // Amazon Associates tag (e.g. "yourname-20")
   affiliateSkimlinksId: '', // Skimlinks publisher ID (e.g. "123456X123456")
+  gistToken: '',            // GitHub Personal Access Token (gist scope only)
+  gistId: '',               // GitHub Gist ID — auto-populated after first sync
 };
 
 // Price extraction selector heuristics (strategy 4)
@@ -82,6 +84,7 @@ export const MSG = {
   PLAY_SOUND: 'PLAY_SOUND',
   ADD_SOURCE: 'ADD_SOURCE',
   REMOVE_SOURCE: 'REMOVE_SOURCE',
+  GIST_SYNC: 'GIST_SYNC',
 };
 
 // Selector drift recovery: re-run auto-detect after N consecutive null results
