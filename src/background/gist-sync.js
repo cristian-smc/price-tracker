@@ -58,7 +58,10 @@ export async function syncToGist() {
         body: JSON.stringify({ files: { [FILENAME]: { content } } }),
         signal: AbortSignal.timeout(15_000),
       });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!resp.ok) {
+        if (resp.status === 401) await updateSettings({ gistToken: '' });
+        throw new Error(`HTTP ${resp.status}`);
+      }
       return { ok: true, gistId };
     } else {
       const resp = await fetch(GIST_API, {
@@ -71,7 +74,10 @@ export async function syncToGist() {
         }),
         signal: AbortSignal.timeout(15_000),
       });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!resp.ok) {
+        if (resp.status === 401) await updateSettings({ gistToken: '' });
+        throw new Error(`HTTP ${resp.status}`);
+      }
       const data    = await resp.json();
       const newId   = data.id;
       await updateSettings({ gistId: newId });

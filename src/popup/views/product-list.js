@@ -157,22 +157,30 @@ function buildCard(p, onSelect, onReorder) {
   card.setAttribute('role', 'button');
   card.setAttribute('tabindex', '0');
   card.dataset.id = p.id;
+  card.dataset.sortOrder = p.sortOrder ?? p.createdAt;
 
   const inner = document.createElement('div');
   inner.className = 'card-inner';
 
-  // Thumbnail (or placeholder)
+  // Thumbnail → site favicon fallback → placeholder SVG
+  const thumbImg = document.createElement('img');
+  thumbImg.className = 'thumb';
+  thumbImg.alt = '';
+  thumbImg.loading = 'lazy';
   if (p.thumbnail) {
-    const img = document.createElement('img');
-    img.className = 'thumb';
-    img.src = p.thumbnail;
-    img.alt = '';
-    img.loading = 'lazy';
-    img.addEventListener('error', () => { img.replaceWith(makeThumbnailPlaceholder()); });
-    inner.appendChild(img);
+    thumbImg.src = p.thumbnail;
+    thumbImg.addEventListener('error', () => { thumbImg.replaceWith(makeThumbnailPlaceholder()); });
   } else {
-    inner.appendChild(makeThumbnailPlaceholder());
+    try {
+      const { hostname } = new URL(p.canonicalUrl ?? p.url);
+      thumbImg.src = `https://www.google.com/s2/favicons?domain=${hostname}&sz=64`;
+      thumbImg.style.cssText = 'object-fit:contain;padding:10px;background:var(--surface);box-sizing:border-box;';
+      thumbImg.addEventListener('error', () => { thumbImg.replaceWith(makeThumbnailPlaceholder()); });
+    } catch {
+      inner.appendChild(makeThumbnailPlaceholder());
+    }
   }
+  if (thumbImg.src) inner.appendChild(thumbImg);
 
   const body = document.createElement('div');
   body.className = 'card-body';
@@ -229,22 +237,48 @@ function buildCard(p, onSelect, onReorder) {
   card.addEventListener('dragend', () => {
     card.setAttribute('draggable', 'false');
     card.classList.remove('dragging');
-    document.querySelectorAll('.product-card.drag-over').forEach((el) => el.classList.remove('drag-over'));
+    document.querySelectorAll('.product-card').forEach((el) => {
+      el.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
   });
   card.addEventListener('dragover', (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    card.classList.add('drag-over');
+    const rect = card.getBoundingClientRect();
+    const isTop = e.clientY < rect.top + rect.height / 2;
+    card.classList.toggle('drag-over-top', isTop);
+    card.classList.toggle('drag-over-bottom', !isTop);
   });
-  card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+  card.addEventListener('dragleave', () => {
+    card.classList.remove('drag-over-top', 'drag-over-bottom');
+  });
   card.addEventListener('drop', (e) => {
     e.preventDefault();
-    card.classList.remove('drag-over');
+    card.classList.remove('drag-over-top', 'drag-over-bottom');
     const draggedId = e.dataTransfer.getData('text/plain');
-    if (draggedId && draggedId !== p.id) {
-      // In descending sort, "before target" means higher sortOrder
-      onReorder(draggedId, (p.sortOrder ?? p.createdAt) + 1);
+    if (!draggedId || draggedId === p.id) return;
+
+    const rect = card.getBoundingClientRect();
+    const insertBefore = e.clientY < rect.top + rect.height / 2;
+    const targetOrder = p.sortOrder ?? p.createdAt;
+
+    // Use midpoint between adjacent cards so sortOrders never collide.
+    // The list is sorted descending, so previousElementSibling has a higher
+    // sortOrder (appears above) and nextElementSibling has a lower sortOrder.
+    let newOrder;
+    if (insertBefore) {
+      let prev = card.previousElementSibling;
+      while (prev && prev.dataset.id === draggedId) prev = prev.previousElementSibling;
+      const prevOrder = prev ? parseFloat(prev.dataset.sortOrder) : targetOrder + 2;
+      newOrder = (prevOrder + targetOrder) / 2;
+    } else {
+      let next = card.nextElementSibling;
+      while (next && next.dataset.id === draggedId) next = next.nextElementSibling;
+      const nextOrder = next ? parseFloat(next.dataset.sortOrder) : targetOrder - 2;
+      newOrder = (targetOrder + nextOrder) / 2;
     }
+
+    onReorder(draggedId, newOrder);
   });
 
   return card;

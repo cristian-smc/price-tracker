@@ -142,25 +142,24 @@ async function checkOneSource(source) {
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
 async function doFetch(target) {
-  if (target.requiresTabExtraction) return tabFetchAndExtract(target);
-  const result = await fetchAndExtract(target);
-  if (result.requiresTabExtraction || result.error) {
-    // Fetch failed (blocked, 403, SPA shell, etc.) — fall back to a real tab.
-    // If the tab succeeds, requiresTabExtraction:true is persisted on the source
-    // so future checks go directly to tab extraction without retrying the fetch.
+  // Always attempt the cheap HTTP path first — even when requiresTabExtraction is
+  // stored on the source. This auto-clears stale flags (set by old discovery logic)
+  // for server-rendered sites, and avoids opening a tab unless truly necessary.
+  // Pass requiresTabExtraction:false so fetchAndExtract doesn't short-circuit.
+  const result = await fetchAndExtract({ ...target, requiresTabExtraction: false });
+
+  // HTTP found a price — done, no tab needed. Return with flag cleared.
+  if (result.price !== null) {
+    return { ...result, requiresTabExtraction: false };
+  }
+
+  // Open a tab only when the response proves a real browser is required:
+  // • fetchAndExtract detected an SPA shell (looksLikeSpa), or
+  // • HTTP errored on a source already confirmed to need a browser.
+  if (result.requiresTabExtraction || (result.error && target.requiresTabExtraction)) {
     return tabFetchAndExtract({ ...target, requiresTabExtraction: true });
   }
-  // Discovery fallback: if we've never successfully extracted a price from this
-  // source, try tab extraction once even though the fetch appeared to succeed.
-  // Handles sites like Google Flights where the raw HTTP response contains no
-  // price data (prices are rendered by client-side JS) but the SPA wasn't
-  // detected by looksLikeSpa (e.g. consent redirect, non-standard SPA shell).
-  // requiresTabExtraction is only persisted when tab actually finds a price, so
-  // broken/static pages don't get locked into slow tab checks on every poll.
-  if (result.price === null && target.neverExtracted) {
-    const tabResult = await tabFetchAndExtract({ ...target, requiresTabExtraction: true });
-    return { ...tabResult, requiresTabExtraction: tabResult.price !== null };
-  }
+
   return result;
 }
 

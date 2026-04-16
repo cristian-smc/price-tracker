@@ -66,6 +66,7 @@ async function showList() {
     },
     onCheckAll: async () => {
       await send({ type: MSG.CHECK_ALL });
+      await showList();
     },
     onReorder: async (id, newOrder) => {
       await Promise.all([

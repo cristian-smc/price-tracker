@@ -80,6 +80,17 @@ PriceWatch does not collect or transmit any personal data. All product data is s
 
 ## Changelog
 
+### 2.2.0
+- **Drag-to-reorder fix** — drop indicator now shows above/below the target card; cards land in the correct position in both directions
+- **Check all fix** — products are now checked one at a time, eliminating the background tab flood and race conditions that caused some sources to be skipped
+- **Prices refresh immediately** after "Check all" completes — no need to reopen the popup
+- **No tabs for non-SPA sites** — plain HTML pages are always fetched headlessly; a tab only opens when the page is detected as a JavaScript SPA
+- **Product detail: larger image** — thumbnail is now shown at 108×108 px
+- **Product detail: site favicon fallback** — products without a scraped thumbnail show the site's logo instead of a blank placeholder
+- **Product detail: URL points to the lowest-price source** — the link and copy button reflect the cheapest store, not the first one added
+- **Sources sorted by price** — cheapest source listed first in the detail view
+- **Gist sync: auto-clear invalid token** — a 401 from GitHub now removes the stored token so future syncs silently skip instead of retrying with bad credentials
+
 ### 2.1.2
 - Fix drag-to-reorder: reordering now persists and renders correctly in all cases
 - Fix drag handle click inadvertently opening product detail
@@ -92,8 +103,6 @@ PriceWatch does not collect or transmit any personal data. All product data is s
 ### 2.1.0
 - Mobile push notification support (ntfy.sh)
 - Improved tab fetching logic
-
-### 2.1.0
 - Multiple sources per product
 - Lowest price tracking across sources
 

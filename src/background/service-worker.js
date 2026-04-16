@@ -163,8 +163,9 @@ async function handleCheckNow(id) {
 async function handleCheckAll() {
   const products = await getProducts();
   const enabled = Object.values(products).filter((p) => p.enabled);
-  // Fire checks concurrently but don't await — checks run in background
-  for (const p of enabled) checkProduct(p.id);
+  // Run sequentially so only one background tab is open at a time.
+  // Concurrent checks race on shared chrome.tabs/scripting APIs and flood the tab bar.
+  for (const p of enabled) await checkProduct(p.id);
   return { ok: true, count: enabled.length };
 }
 

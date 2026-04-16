@@ -42,14 +42,9 @@ export function renderProductDetail({
 
   // ── Thumbnail + name ──────────────────────────────────────────────────────
   const headerRow = document.createElement('div');
-  headerRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
-  if (product.thumbnail) {
-    const img = document.createElement('img');
-    img.src = product.thumbnail;
-    img.alt = '';
-    img.style.cssText = 'width:40px;height:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border);flex-shrink:0;';
-    headerRow.appendChild(img);
-  }
+  headerRow.style.cssText = 'display:flex;align-items:flex-start;gap:12px;';
+  const headerImg = makeDetailImage(product);
+  if (headerImg) headerRow.appendChild(headerImg);
   const nameEl = document.createElement('h2');
   nameEl.textContent = product.name;
   nameEl.title = product.name;
@@ -120,6 +115,9 @@ export function renderProductDetail({
   wrap.appendChild(meta);
 
   // ── URL + copy button ─────────────────────────────────────────────────────
+  const bestSource = product.sources?.find((s) => s.id === product.bestSourceId);
+  const displayUrl = bestSource?.canonicalUrl ?? bestSource?.url ?? product.canonicalUrl ?? product.url;
+
   const urlWrap = document.createElement('div');
   urlWrap.className = 'field';
   urlWrap.style.gap = '4px';
@@ -135,7 +133,7 @@ export function renderProductDetail({
   copyBtn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg> Copy`;
   copyBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(product.canonicalUrl ?? product.url).then(() => {
+    navigator.clipboard.writeText(displayUrl).then(() => {
       copyBtn.textContent = 'Copied!';
       setTimeout(() => {
         copyBtn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg> Copy`;
@@ -147,12 +145,12 @@ export function renderProductDetail({
   urlHeader.appendChild(copyBtn);
 
   const urlLink = document.createElement('a');
-  urlLink.href = applyAffiliate(product.canonicalUrl ?? product.url, settings ?? {});
+  urlLink.href = applyAffiliate(displayUrl, settings ?? {});
   urlLink.target = '_blank';
   urlLink.rel = 'noopener noreferrer';
   urlLink.style.cssText = 'font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;color:var(--accent)';
-  urlLink.textContent = product.canonicalUrl ?? product.url;
-  urlLink.title = product.canonicalUrl ?? product.url;
+  urlLink.textContent = displayUrl;
+  urlLink.title = displayUrl;
 
   urlWrap.appendChild(urlHeader);
   urlWrap.appendChild(urlLink);
@@ -239,7 +237,13 @@ function buildSourcesSection(product, sources, onAddSource, onRemoveSource, sett
   if (sources.length > 0) {
     const list = document.createElement('div');
     list.className = 'source-list';
-    for (const source of sources) {
+    const sorted = [...sources].sort((a, b) => {
+      if (a.currentPrice == null && b.currentPrice == null) return 0;
+      if (a.currentPrice == null) return 1;
+      if (b.currentPrice == null) return -1;
+      return a.currentPrice - b.currentPrice;
+    });
+    for (const source of sorted) {
       list.appendChild(buildSourceItem(source, product, sources.length, onRemoveSource, settings));
     }
     section.appendChild(list);
@@ -335,6 +339,25 @@ function buildSourceItem(source, product, totalSources, onRemoveSource, settings
   }
 
   return item;
+}
+
+function makeDetailImage(product) {
+  const img = document.createElement('img');
+  img.alt = '';
+  if (product.thumbnail) {
+    img.src = product.thumbnail;
+    img.style.cssText = 'width:108px;height:108px;object-fit:cover;border-radius:6px;border:1px solid var(--border);flex-shrink:0;';
+  } else {
+    try {
+      const { hostname } = new URL(product.canonicalUrl ?? product.url);
+      img.src = `https://www.google.com/s2/favicons?domain=${hostname}&sz=64`;
+      img.style.cssText = 'width:108px;height:108px;object-fit:contain;padding:20px;box-sizing:border-box;border-radius:6px;border:1px solid var(--border);background:var(--surface);flex-shrink:0;';
+    } catch {
+      return null;
+    }
+  }
+  img.addEventListener('error', () => img.remove());
+  return img;
 }
 
 function makePriceStat(label, value, modifier) {
