@@ -151,7 +151,10 @@ async function handleCheckNow(id) {
   if (!product) return { error: 'Product not found' };
   // Reset error state and cooldown so the check always runs and notifies, even if
   // the product was auto-disabled or a notification was recently delivered.
-  await saveProduct({ ...product, lastNotified: null, consecutiveErrors: 0, enabled: true });
+  // Also reset consecutiveNulls on each source so the discovery tab-fallback
+  // (neverExtracted gate in doFetch) triggers even if previous checks already ran.
+  const sources = (product.sources ?? []).map((s) => ({ ...s, consecutiveNulls: 0 }));
+  await saveProduct({ ...product, lastNotified: null, consecutiveErrors: 0, enabled: true, sources });
   await syncAlarm({ ...product, enabled: true });
   await checkProduct(id);
   return { ok: true };

@@ -41,7 +41,10 @@ async function parseWithOffscreen(html, url, userSelector) {
 function looksLikeSpa(html) {
   const hasSpaRoot = /<div[^>]+id=["']?(root|app|__next|__nuxt)["']?/i.test(html);
   const hasNoText  = (html.match(/>([A-Za-z0-9][\w\s]{20,})</g) ?? []).length < 3;
-  return hasSpaRoot && hasNoText;
+  // Google's SPA framework (Flights, Hotels, Travel) uses <c-wiz> custom elements
+  // instead of the standard React/Vue/Next.js root div patterns above.
+  const hasGoogleWiz = /<c-wiz[\s/>]/i.test(html);
+  return (hasSpaRoot && hasNoText) || hasGoogleWiz;
 }
 
 /**

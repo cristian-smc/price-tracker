@@ -107,6 +107,10 @@ async function checkOneSource(source) {
     canonicalUrl: source.canonicalUrl,
     selectors: source.selectors ?? { price: null },
     requiresTabExtraction: source.requiresTabExtraction ?? false,
+    // True only on the first attempt when we've never extracted a price — used by
+    // doFetch to trigger a one-shot tab discovery for dynamic sites (e.g. Google
+    // Flights) whose raw HTML fetch won't contain prices regardless of SPA detection.
+    neverExtracted: source.currentPrice == null && (source.consecutiveNulls ?? 0) === 0,
   };
 
   const result = await doFetch(target);
@@ -145,6 +149,17 @@ async function doFetch(target) {
     // If the tab succeeds, requiresTabExtraction:true is persisted on the source
     // so future checks go directly to tab extraction without retrying the fetch.
     return tabFetchAndExtract({ ...target, requiresTabExtraction: true });
+  }
+  // Discovery fallback: if we've never successfully extracted a price from this
+  // source, try tab extraction once even though the fetch appeared to succeed.
+  // Handles sites like Google Flights where the raw HTTP response contains no
+  // price data (prices are rendered by client-side JS) but the SPA wasn't
+  // detected by looksLikeSpa (e.g. consent redirect, non-standard SPA shell).
+  // requiresTabExtraction is only persisted when tab actually finds a price, so
+  // broken/static pages don't get locked into slow tab checks on every poll.
+  if (result.price === null && target.neverExtracted) {
+    const tabResult = await tabFetchAndExtract({ ...target, requiresTabExtraction: true });
+    return { ...tabResult, requiresTabExtraction: tabResult.price !== null };
   }
   return result;
 }

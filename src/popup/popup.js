@@ -68,7 +68,10 @@ async function showList() {
       await send({ type: MSG.CHECK_ALL });
     },
     onReorder: async (id, newOrder) => {
-      await send({ type: MSG.UPDATE_PRODUCT, id, data: { sortOrder: newOrder } });
+      await Promise.all([
+        send({ type: MSG.UPDATE_PRODUCT, id, data: { sortOrder: newOrder } }),
+        send({ type: MSG.UPDATE_SETTINGS, data: { sortBy: 'manual' } }),
+      ]);
       showList();
     },
     sortBy: settings?.sortBy ?? 'created',

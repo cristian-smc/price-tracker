@@ -52,7 +52,7 @@ export function renderProductList(products, {
 
   const sortSelect = document.createElement('select');
   sortSelect.setAttribute('aria-label', 'Sort by');
-  for (const [val, label] of [['created','Newest'],['name','Name'],['price','Price'],['last_checked','Last checked']]) {
+  for (const [val, label] of [['created','Newest'],['name','Name'],['price','Price'],['last_checked','Last checked'],['manual','Custom order']]) {
     const opt = document.createElement('option');
     opt.value = val; opt.textContent = label;
     if (val === sortBy) opt.selected = true;
@@ -134,7 +134,7 @@ export function renderProductList(products, {
       if (sort === 'name') return a.name.localeCompare(b.name);
       if (sort === 'price') return (a.currentPrice ?? Infinity) - (b.currentPrice ?? Infinity);
       if (sort === 'last_checked') return (b.lastChecked ?? 0) - (a.lastChecked ?? 0);
-      if (sort === 'manual') return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+      if (sort === 'manual') return (b.sortOrder ?? b.createdAt) - (a.sortOrder ?? a.createdAt);
       return b.createdAt - a.createdAt; // default: newest first
     });
 
@@ -210,6 +210,7 @@ function buildCard(p, onSelect, onReorder) {
     card.setAttribute('draggable', 'true');
     e.stopPropagation();
   });
+  handle.addEventListener('click', (e) => e.stopPropagation());
 
   card.appendChild(inner);
   card.appendChild(handle);
@@ -241,8 +242,8 @@ function buildCard(p, onSelect, onReorder) {
     card.classList.remove('drag-over');
     const draggedId = e.dataTransfer.getData('text/plain');
     if (draggedId && draggedId !== p.id) {
-      // Move dragged item to just before this card's sortOrder
-      onReorder(draggedId, (p.sortOrder ?? p.createdAt) - 1);
+      // In descending sort, "before target" means higher sortOrder
+      onReorder(draggedId, (p.sortOrder ?? p.createdAt) + 1);
     }
   });
 
