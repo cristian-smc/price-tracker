@@ -18,8 +18,8 @@
 import { HEURISTIC_SELECTORS } from '../shared/constants.js';
 
 // Total time budget from window creation. Must exceed max page-load time + MAX_WAIT
-// (page load ≤ ~20 s + MAX_WAIT 15 s = 35 s, so 45 s gives a safe margin).
-const TAB_TIMEOUT_MS = 45_000;
+// (page load ≤ ~20 s + MAX_WAIT 28 s = 48 s, so 60 s gives a safe margin).
+const TAB_TIMEOUT_MS = 60_000;
 
 /**
  * Stock detection — runs in MAIN world so window.dataLayer is accessible.
@@ -225,7 +225,7 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   // NOTE: helper functions must stay nested here —
   // executeScript serialises only this function into the page context, so
   // module-level helpers are unreachable from the injected code.
-  const MAX_WAIT = 15000;
+  const MAX_WAIT = 28_000;
   const start = Date.now();
 
   // ── Cookie / GDPR consent auto-dismissal ─────────────────────────────────
@@ -329,6 +329,8 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   function tryExtractByText() { // NOSONAR
     const numThenCurr = /(?:^|[\s(])(\d[\d\s.,]{0,9}\s*(?:€|lei|RON|EUR|GBP|[£$]))(?:[\s)]|$)/i;
     const currThenNum = /(?:^|[\s(])([€£$]\s*\d[\d\s.,]{0,9})(?:[\s)]|$)/i;
+    // Handles "RON 1,234" / "EUR 1.234" style (text code before number — common on Google Flights)
+    const codeThenNum = /(?:^|[\s(])((?:RON|EUR|GBP|HUF|PLN|CHF|USD|lei)\s+\d[\d\s.,]{0,9})(?:[\s)]|$)/i;
     const MIN_FONT_PX = 12;
     let lowestPrice = null;
     let lowestRaw   = null;
@@ -339,7 +341,7 @@ function tabExtractor({ tabId, userSelector, selectors }) {
         if (rect.width === 0 || rect.height === 0) continue;
         const text = (el.textContent ?? '').trim();
         if (!text || text.length > 40) continue;
-        const m = text.match(numThenCurr) ?? text.match(currThenNum);
+        const m = text.match(numThenCurr) ?? text.match(currThenNum) ?? text.match(codeThenNum);
         if (!m) continue;
         if ((Number.parseFloat(getComputedStyle(el).fontSize) || 0) < MIN_FONT_PX) continue;
         const price = parseMinorUnits(m[1].trim());
@@ -403,9 +405,9 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   }
 
   // How long the lowest price must remain unchanged before we consider the
-  // search settled. Google Flights loads results progressively over ~10 s, so
+  // search settled. Google Flights can stream results for 15-20 s, so
   // we keep watching until the price has been stable for this window.
-  const STABLE_WINDOW_MS = 6000;
+  const STABLE_WINDOW_MS = 10_000;
 
   let sent = false;
   function send(data) {

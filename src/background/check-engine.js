@@ -180,7 +180,7 @@ function resolveSelectorsForSource(source, result) {
     }
   } else {
     consecutiveNulls = 0;
-    if (result.selectorUsed && result.strategy === 4 && selectors.price == null) {
+    if (result.selectorUsed && result.selectorUsed !== '_text_scan' && result.strategy === 4 && selectors.price == null) {
       selectors.price = result.selectorUsed;
     }
   }
