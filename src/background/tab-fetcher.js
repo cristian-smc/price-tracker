@@ -405,7 +405,7 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   // How long the lowest price must remain unchanged before we consider the
   // search settled. Google Flights loads results progressively over ~10 s, so
   // we keep watching until the price has been stable for this window.
-  const STABLE_WINDOW_MS = 4000;
+  const STABLE_WINDOW_MS = 6000;
 
   let sent = false;
   function send(data) {
@@ -428,18 +428,23 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   // Reset the stable-window timer only when the lowest price improves.
   // If the page keeps mutating (spinners, ads) without a better price, the
   // timer is left alone and fires naturally after STABLE_WINDOW_MS.
-  function updateBest(price, raw, selectorUsed) {
+  // scheduleStable=false lets the initial scan prime bestPrice without
+  // starting the countdown — we only start counting once the observer
+  // sees the search results actually update the DOM.
+  function updateBest(price, raw, selectorUsed, scheduleStable = true) {
     if (bestPrice === null || price < bestPrice) {
       bestPrice    = price;
       bestRaw      = raw;
       bestSelector = selectorUsed;
-      // New lower price found — restart the stable-window countdown.
-      if (stableTimer) clearTimeout(stableTimer);
-      stableTimer = setTimeout(() => {
-        observer.disconnect();
-        send({ price: bestPrice, currency: detectCurrency(bestRaw) ?? 'USD', selectorUsed: bestSelector, strategy: 4, inStock: extractStock() });
-      }, STABLE_WINDOW_MS);
-      timers.push(stableTimer);
+      if (scheduleStable) {
+        // New lower price found — restart the stable-window countdown.
+        if (stableTimer) clearTimeout(stableTimer);
+        stableTimer = setTimeout(() => {
+          observer.disconnect();
+          send({ price: bestPrice, currency: detectCurrency(bestRaw) ?? 'USD', selectorUsed: bestSelector, strategy: 4, inStock: extractStock() });
+        }, STABLE_WINDOW_MS);
+        timers.push(stableTimer);
+      }
     }
   }
 
@@ -451,11 +456,13 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     if (price > 0) { send({ price, currency: detectCurrency(initial.raw) ?? 'USD', selectorUsed: initial.selectorUsed, strategy: 4, inStock: extractStock() }); return; }
   }
 
-  // No selector hit — check text scan and prime the best-price tracker.
+  // No selector hit — prime best-price from the initial page state but do NOT
+  // start the stable timer yet. The observer starts it once the search updates
+  // the DOM (i.e. real results arrive), so we don't fire on the skeleton price.
   const initialText = tryExtractByText();
   if (initialText) {
     const price = parseMinorUnits(initialText.raw);
-    if (price > 0) updateBest(price, initialText.raw, initialText.selectorUsed);
+    if (price > 0) updateBest(price, initialText.raw, initialText.selectorUsed, false);
   }
 
   const observer = new MutationObserver(() => {
