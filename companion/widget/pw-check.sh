@@ -4,10 +4,23 @@
 
 COMPANION_DIR="$HOME/price-tracker/companion"
 
-termux-toast -s "PriceWatch: checking prices…"
+termux-notification \
+  --id 42 \
+  --title "PriceWatch" \
+  --content "Checking prices…" \
+  --icon "sync" \
+  --ongoing
 
 if cd "$COMPANION_DIR" && node check.js >> check.log 2>&1; then
-  termux-toast -s "PriceWatch: check done ✓"
+  termux-notification \
+    --id 42 \
+    --title "PriceWatch" \
+    --content "Check done ✓" \
+    --icon "check_circle"
 else
-  termux-toast -s "PriceWatch: check failed — see check.log"
+  termux-notification \
+    --id 42 \
+    --title "PriceWatch" \
+    --content "Check failed — see check.log" \
+    --icon "error"
 fi
