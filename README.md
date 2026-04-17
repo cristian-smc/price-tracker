@@ -8,7 +8,8 @@ Track prices on any website. Get notified when they drop. Never overpay again.
 - **Automatic price checks** — checks prices in the background at a configurable interval
 - **Price drop alerts** — desktop notifications and optional mobile push (via ntfy.sh) when a price falls below your target
 - **Price history** — sparkline chart showing price over time for each product
-- **Multiple sources** — track the same product across several stores and always see the lowest price
+- **Multiple sources** — track the same product across several stores and always see the lowest available price
+- **Stock awareness** — in-stock / out-of-stock status shown per source; price-drop alerts suppressed when the item is out of stock; notified when it comes back in stock
 - **Daily digest** — optional morning summary of products below target
 - **GitHub Gist sync** — back up and sync your tracked products across devices
 - **Dark / light / auto theme**
@@ -79,6 +80,14 @@ PriceWatch does not collect or transmit any personal data. All product data is s
 `Alt+P` — open the PriceWatch popup (configurable via `chrome://extensions/shortcuts`).
 
 ## Changelog
+
+### 2.3.0
+- **Stock awareness** — each source now shows an in-stock or out-of-stock badge in the product detail view
+- **Smarter best-source selection** — the extension picks the lowest price among in-stock sources, not just the overall lowest
+- **Suppressed false alerts** — price-drop notifications are not sent when the item is out of stock
+- **Back-in-stock notification** — get alerted the moment a tracked product comes back into stock
+- **Accurate badge count** — the icon badge only counts products that are below target price AND available to buy
+- **Companion app stock support** — the Termux companion also detects stock and suppresses out-of-stock price-drop alerts
 
 ### 2.2.0
 - **Drag-to-reorder fix** — drop indicator now shows above/below the target card; cards land in the correct position in both directions
