@@ -1,8 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# PriceWatch — Show the last 30 lines of the check log in a Termux session.
-# Installed by setup.sh into ~/.shortcuts/ — tap via Termux:Widget.
+# PriceWatch — Show last 30 lines of check.log.
+# Tap via Termux widget on home screen.
 
-COMPANION_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.."
+COMPANION_DIR="$HOME/price-tracker/companion"
 
 tail -30 "$COMPANION_DIR/check.log"
 read -rp $'\nPress Enter to close…'

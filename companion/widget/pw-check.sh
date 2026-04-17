@@ -1,8 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # PriceWatch — Run a manual price check now.
-# Installed by setup.sh into ~/.shortcuts/ — tap via Termux:Widget.
+# Tap via Termux widget on home screen.
 
-COMPANION_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.."
+COMPANION_DIR="$HOME/price-tracker/companion"
 
 termux-toast -s "PriceWatch: checking prices…"
 
