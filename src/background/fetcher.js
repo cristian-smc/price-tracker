@@ -99,7 +99,7 @@ export async function fetchAndExtract(product) {
     const result = await parseWithOffscreen(html, product.url, product.selectors?.price ?? null);
 
     if (result?.error) {
-      return { price: null, currency: null, stock: 'unknown', strategy: null, selectorUsed: null, requiresTabExtraction: false, canonicalUrl: finalUrl, thumbnail: null, error: result.error };
+      return { price: null, currency: null, inStock: null, strategy: null, selectorUsed: null, requiresTabExtraction: false, canonicalUrl: finalUrl, thumbnail: null, error: result.error };
     }
 
     const spaDetected = !result?.price && looksLikeSpa(html);
@@ -110,12 +110,13 @@ export async function fetchAndExtract(product) {
       strategy: result?.strategy ?? null,
       selectorUsed: result?.selectorUsed ?? null,
       thumbnail: result?.thumbnail ?? null,
+      inStock: result?.inStock ?? null,
       requiresTabExtraction: spaDetected,
       canonicalUrl: finalUrl,
       error: null,
     };
   } catch (err) {
-    return { price: null, currency: null, stock: 'unknown', strategy: null, selectorUsed: null, requiresTabExtraction: false, canonicalUrl: finalUrl, thumbnail: null, error: err.message };
+    return { price: null, currency: null, inStock: null, strategy: null, selectorUsed: null, requiresTabExtraction: false, canonicalUrl: finalUrl, thumbnail: null, error: err.message };
   }
 }
 

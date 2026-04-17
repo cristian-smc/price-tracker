@@ -324,6 +324,18 @@ function buildSourceItem(source, product, totalSources, onRemoveSource, settings
     }
   }
 
+  if (source.inStock === false) {
+    const badge = document.createElement('span');
+    badge.className = 'badge oos';
+    badge.textContent = 'Out of stock';
+    priceEl.appendChild(badge);
+  } else if (source.inStock === true) {
+    const badge = document.createElement('span');
+    badge.className = 'badge ins';
+    badge.textContent = 'In stock';
+    priceEl.appendChild(badge);
+  }
+
   left.appendChild(label);
   left.appendChild(priceEl);
   item.appendChild(left);

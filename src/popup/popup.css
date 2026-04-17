@@ -122,6 +122,8 @@ body {
 .badge.unknown { background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); }
 .badge.error { background: #fef3c7; color: #92400e; }
 .badge.drift { background: #fef3c7; color: #92400e; }
+.badge.oos   { background: #fee2e2; color: #991b1b; }
+.badge.ins   { background: #dcfce7; color: #166534; }
 
 /* ── Buttons ─────────────────────────────────────────────────── */
 .btn {
@@ -319,7 +321,7 @@ body {
   color: var(--accent); text-decoration: none;
 }
 .source-label:hover { text-decoration: underline; }
-.source-price { font-size: 13px; font-weight: 700; }
+.source-price { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 5px; }
 .source-price.best { color: var(--success); }
 
 .source-remove {

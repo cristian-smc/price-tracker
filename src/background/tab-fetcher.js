@@ -22,6 +22,85 @@ import { HEURISTIC_SELECTORS } from '../shared/constants.js';
 const TAB_TIMEOUT_MS = 45_000;
 
 /**
+ * Stock detection — runs in MAIN world so window.dataLayer is accessible.
+ * Injected via executeScript after the price result arrives (tab still open).
+ * Returns true (in stock), false (out of stock), or null (unknown).
+ *
+ * Strategies in priority order:
+ *  1. Platform-specific IDs (Sylius)
+ *  2. JSON-LD schema.org offers.availability
+ *  3. OpenGraph product:availability meta
+ *  4. GTM window.dataLayer item_stock
+ *  5. itemprop="availability"
+ *  6. Common e-commerce class/attribute patterns
+ *  7. textContent scan (layout-independent fallback)
+ */
+function mainWorldStockCheck() { // NOSONAR
+  // 1. Sylius (bestvalue.eu, epantofi.ro, etc.)
+  if (document.querySelector('#sylius-product-out-of-stock'))  return false;
+  if (document.querySelector('#sylius-product-adding-to-cart')) return true;
+
+  // 2. JSON-LD schema.org — most reliable cross-platform standard
+  function ldAvail(schema) { // NOSONAR
+    if (schema['@graph']) { for (const n of schema['@graph']) { const r = ldAvail(n); if (r !== null) return r; } }
+    const t = [schema['@type'] ?? []].flat().join(',').toLowerCase();
+    if (!t.includes('product')) return null;
+    for (const offer of [schema.offers ?? []].flat()) {
+      const v = String(offer.availability ?? '').toLowerCase();
+      if (v.includes('instock'))    return true;
+      if (v.includes('outofstock')) return false;
+    }
+    return null;
+  }
+  for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+    try { for (const sc of [JSON.parse(s.textContent)].flat()) { const r = ldAvail(sc); if (r !== null) return r; } } catch {}
+  }
+
+  // 3. OpenGraph product:availability
+  const ogV = (document.querySelector('meta[property="product:availability"]')?.getAttribute('content') ?? '').toLowerCase().replaceAll(/\s+/g, '');
+  if (ogV === 'instock')              return true;
+  if (ogV === 'outofstock' || ogV === 'oos') return false;
+
+  // 4. GTM dataLayer (accessible only in MAIN world)
+  if (Array.isArray(window.dataLayer)) {
+    for (const entry of window.dataLayer) {
+      const items = entry?.ecommerce?.items;
+      if (!Array.isArray(items)) continue;
+      for (const item of items) {
+        if (item.item_stock == null) continue;
+        return item.item_stock.toLowerCase().includes('out') ? false : true;
+      }
+    }
+  }
+
+  // 5. itemprop="availability"
+  const availEl = document.querySelector('[itemprop="availability"]');
+  if (availEl) {
+    const v = (availEl.getAttribute('content') || availEl.getAttribute('href') || availEl.textContent).toLowerCase();
+    if (/instock/.test(v))                         return true;
+    if (/outofstock|out[\s-]of[\s-]stock/.test(v)) return false;
+  }
+
+  // 6. Common e-commerce class / attribute patterns
+  if (document.querySelector('.stock.out-of-stock, [data-stock="outofstock"], [data-availability="out-of-stock"], [data-available="false"]')) return false;
+  if (document.querySelector('.stock.in-stock,     [data-stock="instock"],    [data-availability="in-stock"],    [data-available="true"]'))  return true;
+
+  // 7. textContent scan — excludes <script>/<style> inline content, layout-independent
+  let bodyText = '';
+  for (const node of document.body?.childNodes ?? []) {
+    const tag = node.nodeName?.toLowerCase();
+    if (tag === 'script' || tag === 'style') continue;
+    bodyText += node.textContent;
+  }
+  bodyText = bodyText.toLowerCase();
+  const OOS = ['out of stock', 'sold out', 'nu este in stoc', 'nu este \u00een stoc', 'stoc epuizat', 'indisponibil', 'nicht auf lager', 'fuori stock', 'sin stock'];
+  const INS = ['add to cart', 'add to basket', 'adauga in cos', 'adaug\u0103 \u00een co\u0219', 'buy now'];
+  for (const p of OOS) { if (bodyText.includes(p)) return false; }
+  for (const p of INS) { if (bodyText.includes(p)) return true; }
+  return null;
+}
+
+/**
  * @param {import('../shared/types').Product} product
  */
 export async function tabFetchAndExtract(product) {
@@ -97,11 +176,25 @@ export async function tabFetchAndExtract(product) {
       timeout(TAB_TIMEOUT_MS, 'Tab extraction timed out'),
     ]);
 
+    // Run stock check in MAIN world while the tab is still open.
+    // MAIN world sees window.dataLayer; isolated-world result is the fallback.
+    let inStock = result.inStock ?? null;
+    try {
+      const sr = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: mainWorldStockCheck,
+      });
+      const mainResult = sr?.[0]?.result;
+      if (mainResult !== null && mainResult !== undefined) inStock = mainResult;
+    } catch { /* tab navigated away or scripting not permitted — keep isolated-world result */ }
+
     return {
       price: result.price ?? null,
       currency: result.currency ?? null,
       strategy: result.strategy ?? null,
       selectorUsed: result.selectorUsed ?? null,
+      inStock,
       requiresTabExtraction: true,
       error: null,
     };
@@ -109,6 +202,7 @@ export async function tabFetchAndExtract(product) {
     return {
       price: null, currency: null,
       strategy: null, selectorUsed: null,
+      inStock: null,
       requiresTabExtraction: true,
       error: err.message,
     };
@@ -259,6 +353,55 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     return lowestRaw ? { raw: lowestRaw, selectorUsed: '_text_scan' } : null;
   }
 
+  // ── Stock extraction (isolated world — no window.dataLayer access) ───────────
+  function extractStock() { // NOSONAR
+    // 1. Sylius
+    if (document.querySelector('#sylius-product-out-of-stock'))  return false;
+    if (document.querySelector('#sylius-product-adding-to-cart')) return true;
+    // 2. JSON-LD
+    function ldAvail(schema) { // NOSONAR
+      if (schema['@graph']) { for (const n of schema['@graph']) { const r = ldAvail(n); if (r !== null) return r; } }
+      const t = [schema['@type'] ?? []].flat().join(',').toLowerCase();
+      if (!t.includes('product')) return null;
+      for (const offer of [schema.offers ?? []].flat()) {
+        const v = String(offer.availability ?? '').toLowerCase();
+        if (v.includes('instock'))    return true;
+        if (v.includes('outofstock')) return false;
+      }
+      return null;
+    }
+    for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+      try { for (const sc of [JSON.parse(s.textContent)].flat()) { const r = ldAvail(sc); if (r !== null) return r; } } catch {}
+    }
+    // 3. OpenGraph
+    const ogV = (document.querySelector('meta[property="product:availability"]')?.getAttribute('content') ?? '').toLowerCase().replaceAll(/\s+/g, '');
+    if (ogV === 'instock')                          return true;
+    if (ogV === 'outofstock' || ogV === 'oos')      return false;
+    // 4. itemprop="availability"
+    const availEl = document.querySelector('[itemprop="availability"]');
+    if (availEl) {
+      const v = (availEl.getAttribute('content') || availEl.getAttribute('href') || availEl.textContent).toLowerCase();
+      if (/instock/.test(v)) return true;
+      if (/outofstock|out[\s-]of[\s-]stock/.test(v)) return false;
+    }
+    // 5. Common class / attribute patterns
+    if (document.querySelector('.stock.out-of-stock, [data-stock="outofstock"], [data-availability="out-of-stock"]')) return false;
+    if (document.querySelector('.stock.in-stock,     [data-stock="instock"],    [data-availability="in-stock"]'))    return true;
+    // 6. textContent scan
+    let bodyText = '';
+    for (const node of document.body?.childNodes ?? []) {
+      const tag = node.nodeName?.toLowerCase();
+      if (tag === 'script' || tag === 'style') continue;
+      bodyText += node.textContent;
+    }
+    bodyText = bodyText.toLowerCase();
+    const OOS = ['out of stock', 'sold out', 'nu este in stoc', 'nu este \u00een stoc', 'stoc epuizat', 'indisponibil'];
+    const INS = ['add to cart', 'add to basket', 'adauga in cos', 'adaug\u0103 \u00een co\u0219', 'buy now'];
+    for (const p of OOS) { if (bodyText.includes(p)) return false; }
+    for (const p of INS) { if (bodyText.includes(p)) return true; }
+    return null;
+  }
+
   let sent = false;
   function send(data) {
     if (sent) return;
@@ -274,7 +417,7 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   const initial = tryAll();
   if (initial) {
     const price = parseMinorUnits(initial.raw);
-    if (price > 0) { send({ price, currency: detectCurrency(initial.raw) ?? 'USD', selectorUsed: initial.selectorUsed, strategy: 4 }); return; }
+    if (price > 0) { send({ price, currency: detectCurrency(initial.raw) ?? 'USD', selectorUsed: initial.selectorUsed, strategy: 4, inStock: extractStock() }); return; }
   }
 
   const observer = new MutationObserver(() => {
@@ -284,13 +427,13 @@ function tabExtractor({ tabId, userSelector, selectors }) {
       const price = parseMinorUnits(r.raw);
       if (price > 0) {
         observer.disconnect();
-        send({ price, currency: detectCurrency(r.raw) ?? 'USD', selectorUsed: r.selectorUsed, strategy: 4 });
+        send({ price, currency: detectCurrency(r.raw) ?? 'USD', selectorUsed: r.selectorUsed, strategy: 4, inStock: extractStock() });
         return;
       }
     }
     if (Date.now() - start > MAX_WAIT) {
       observer.disconnect();
-      send({ price: null, currency: null, selectorUsed: null, strategy: null });
+      send({ price: null, currency: null, selectorUsed: null, strategy: null, inStock: extractStock() });
     }
   });
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
@@ -304,9 +447,9 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     const last = tryAll();
     const price = last ? parseMinorUnits(last.raw) : null;
     if (price > 0) {
-      send({ price, currency: detectCurrency(last.raw) ?? 'USD', selectorUsed: last.selectorUsed, strategy: 4 });
+      send({ price, currency: detectCurrency(last.raw) ?? 'USD', selectorUsed: last.selectorUsed, strategy: 4, inStock: extractStock() });
     } else {
-      send({ price: null, currency: null, selectorUsed: null, strategy: null });
+      send({ price: null, currency: null, selectorUsed: null, strategy: null, inStock: extractStock() });
     }
   }, Math.max(MAX_WAIT - (Date.now() - start), 500)));
 }

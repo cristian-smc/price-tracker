@@ -245,6 +245,73 @@ function extractFromSchema(schema) {
   return extractLowestOffer(offerList);
 }
 
+// ── Stock extraction ───────────────────────────────────────────────────────────
+
+/**
+ * Returns true (in stock), false (out of stock), or null (unknown).
+ * Tries 4 strategies in order of reliability.
+ */
+function extractStock(html, $) {
+  // Strategy 1: JSON-LD offers.availability (schema.org)
+  const scripts = $('script[type="application/ld+json"]');
+  for (let i = 0; i < scripts.length; i++) {
+    try {
+      const data = JSON.parse($(scripts[i]).html());
+      const schemas = Array.isArray(data) ? data : [data];
+      for (const schema of schemas) {
+        const avail = findJsonLdAvailability(schema);
+        if (avail !== null) return avail;
+      }
+    } catch { /* malformed JSON-LD */ }
+  }
+
+  // Strategy 2: OpenGraph product:availability
+  const ogAvail = $('meta[property="product:availability"]').attr('content');
+  if (ogAvail) {
+    const v = ogAvail.trim().toLowerCase().replace(/\s+/g, '');
+    if (v === 'instock')    return true;
+    if (v === 'outofstock') return false;
+  }
+
+  // Strategy 3: GTM dataLayer item_stock (used by bestvalue.eu and similar)
+  const dlMatch = html.match(/"item_stock"\s*:\s*"([^"]+)"/);
+  if (dlMatch) {
+    const v = dlMatch[1].toLowerCase();
+    if (v === 'in stock')    return true;
+    if (v === 'out of stock') return false;
+  }
+
+  // Strategy 4: itemprop="availability"
+  const itemAvail = $('[itemprop="availability"]');
+  if (itemAvail.length) {
+    const raw = (itemAvail.attr('content') || itemAvail.attr('href') || itemAvail.text()).toLowerCase();
+    if (/instock/.test(raw))              return true;
+    if (/outofstock|out.of.stock/.test(raw)) return false;
+  }
+
+  return null; // unknown — don't suppress notifications
+}
+
+function findJsonLdAvailability(schema) {
+  if (schema['@graph']) {
+    for (const node of schema['@graph']) {
+      const r = findJsonLdAvailability(node);
+      if (r !== null) return r;
+    }
+  }
+  if (!isProductType(schema['@type'])) return null;
+  if (!schema.offers) return null;
+  const offerList = Array.isArray(schema.offers) ? schema.offers : [schema.offers];
+  for (const offer of offerList) {
+    const avail = offer.availability;
+    if (!avail) continue;
+    const v = String(avail).toLowerCase();
+    if (v.includes('instock'))    return true;
+    if (v.includes('outofstock')) return false;
+  }
+  return null;
+}
+
 function tryJsonLd($) {
   const scripts = $('script[type="application/ld+json"]');
   for (let i = 0; i < scripts.length; i++) {
@@ -273,12 +340,11 @@ function tryOpenGraph($) {
 }
 
 /**
- * Extract price from raw HTML. Returns { price, currency, strategy } or null.
+ * Extract price from a pre-loaded cheerio instance.
+ * Returns { price, currency, strategy } or null.
  * Mirrors the 4-strategy waterfall in offscreen.js.
  */
-function extractPrice(html, userSelector) {
-  const $ = cheerio.load(html);
-
+function extractPrice($, userSelector) {
   if (userSelector) {
     const result = trySelectorCheerio($, userSelector);
     if (result) return { ...result, strategy: 1 };
@@ -445,31 +511,48 @@ async function checkOneProduct(product, state) {
     return;
   }
 
-  const result = extractPrice(html, product.priceSelector ?? null);
+  const $ = cheerio.load(html);
+
+  const result = extractPrice($, product.priceSelector ?? null);
   if (!result) { log(`    no price found`); return; }
 
   const { price, currency: detected, strategy } = result;
   const currency  = detected ?? product.currency ?? 'USD';
   const formatted = formatPrice(price, currency);
-  log(`    ${formatted}  (strategy ${strategy})`);
 
-  const prev      = state[product.id] ?? {};
-  const now       = new Date().toISOString();
-  const notifBody = buildNotification(product, price, currency, prev);
+  const inStock  = extractStock(html, $);
+  const stockTag = inStock === true ? 'in stock' : inStock === false ? 'OUT OF STOCK' : 'stock unknown';
+  log(`    ${formatted}  (strategy ${strategy})  [${stockTag}]`);
 
-  if (notifBody) {
-    const cooldownMs     = (product.intervalMinutes ?? 30) * 2 * 60 * 1000;
-    const lastNotifiedAt = prev.lastNotified ? new Date(prev.lastNotified).getTime() : 0;
-    if (Date.now() - lastNotifiedAt >= cooldownMs) {
-      notify(product.id, product.name, notifBody, product.url);
-      state[product.id] = { lastPrice: price, lastChecked: now, lastNotified: now };
-      log(`    notified!`);
+  const prev = state[product.id] ?? {};
+  const now  = new Date().toISOString();
+
+  // Back-in-stock notification (was OOS last run, now available)
+  if (inStock === true && prev.inStock === false) {
+    notify(`${product.id}_stock`, product.name, `Back in stock! Now ${formatted}`, product.url);
+    log(`    back in stock — notified!`);
+  }
+
+  // Price-drop notification — skip when confirmed out of stock
+  if (inStock !== false) {
+    const notifBody = buildNotification(product, price, currency, prev);
+    if (notifBody) {
+      const cooldownMs     = (product.intervalMinutes ?? 30) * 2 * 60 * 1000;
+      const lastNotifiedAt = prev.lastNotified ? new Date(prev.lastNotified).getTime() : 0;
+      if (Date.now() - lastNotifiedAt >= cooldownMs) {
+        notify(product.id, product.name, notifBody, product.url);
+        state[product.id] = { lastPrice: price, lastChecked: now, lastNotified: now, inStock };
+        log(`    notified!`);
+      } else {
+        log(`    below target — cooldown active`);
+        state[product.id] = { ...prev, lastPrice: price, lastChecked: now, inStock };
+      }
     } else {
-      log(`    below target — cooldown active`);
-      state[product.id] = { ...prev, lastPrice: price, lastChecked: now };
+      state[product.id] = { ...prev, lastPrice: price, lastChecked: now, inStock };
     }
   } else {
-    state[product.id] = { ...prev, lastPrice: price, lastChecked: now };
+    // Out of stock — track price/stock but don't fire price-drop notification
+    state[product.id] = { ...prev, lastPrice: price, lastChecked: now, inStock };
   }
 }
 

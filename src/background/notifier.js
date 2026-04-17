@@ -11,17 +11,21 @@ import { formatPrice } from '../shared/currency.js';
 import { getSettings } from '../shared/storage.js';
 import { NOTIFY_COOLDOWN_MULTIPLIER } from '../shared/constants.js';
 
-export async function maybeNotify(product, previousPrice) {
+export async function maybeNotify(product, previousPrice, previousInStock = null) {
   const settings = await getSettings();
   if (!settings.notificationsEnabled) return null;
   if (product.notificationEnabled === false) return null;
 
-  const now = Date.now();
-  const cooldownMs = product.intervalMinutes * NOTIFY_COOLDOWN_MULTIPLIER * 60 * 1000;
-  if (product.lastNotified && (now - product.lastNotified) < cooldownMs) return null;
-
-  const event = detectEvent(product, previousPrice);
+  const event = detectEvent(product, previousPrice, previousInStock);
   if (!event) return null;
+
+  const now = Date.now();
+
+  // Back-in-stock bypasses the cooldown — it's a one-shot edge trigger
+  if (event !== 'back_in_stock') {
+    const cooldownMs = product.intervalMinutes * NOTIFY_COOLDOWN_MULTIPLIER * 60 * 1000;
+    if (product.lastNotified && (now - product.lastNotified) < cooldownMs) return null;
+  }
 
   const { title, message } = buildMessage(event, product);
   const notifId = `price_${product.id}_${now}`;
@@ -42,8 +46,14 @@ export async function maybeNotify(product, previousPrice) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function detectEvent(product, previousPrice) {
-  const { currentPrice, targetPrice, sellThreshold } = product;
+function detectEvent(product, previousPrice, previousInStock) {
+  const { currentPrice, targetPrice, sellThreshold, inStock } = product;
+
+  // Back-in-stock: was confirmed OOS last run, now available
+  if (inStock === true && previousInStock === false) return 'back_in_stock';
+
+  // Suppress price/sell alerts when confirmed out of stock
+  if (inStock === false) return null;
 
   if (currentPrice !== null && targetPrice !== null && currentPrice < targetPrice) {
     return 'price_drop';
@@ -57,6 +67,9 @@ function detectEvent(product, previousPrice) {
 
 function buildMessage(event, product) {
   const cur = formatPrice(product.currentPrice, product.currency ?? 'USD');
+  if (event === 'back_in_stock') {
+    return { title: `Back in stock: ${product.name}`, message: `Now available at ${cur}` };
+  }
   if (event === 'price_drop') {
     const target = formatPrice(product.targetPrice, product.currency ?? 'USD');
     return { title: `Price drop: ${product.name}`, message: `Now ${cur} — below your target of ${target}` };

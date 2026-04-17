@@ -185,7 +185,7 @@ function buildCard(p, onSelect, onReorder) {
   const body = document.createElement('div');
   body.className = 'card-body';
 
-  const isPriceDrop = p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice;
+  const isPriceDrop = p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice && p.inStock !== false;
   const priceStr = displayPrice(p.currentPrice, p.currency);
 
   // Row 1: name + price
@@ -311,7 +311,20 @@ function makeRow2(p) {
   const pctBadge = makePctBadge(p);
   if (pctBadge) row2.appendChild(pctBadge);
 
-  const isPriceDrop = p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice;
+  const isPriceDrop = p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice && p.inStock !== false;
+  if (p.inStock === false) {
+    const oos = document.createElement('span');
+    oos.className = 'badge oos';
+    oos.textContent = 'Out of stock';
+    oos.title = 'Currently out of stock — price drop notifications paused';
+    row2.appendChild(oos);
+  } else if (p.inStock === true) {
+    const ins = document.createElement('span');
+    ins.className = 'badge ins';
+    ins.textContent = 'In stock';
+    ins.title = 'In stock';
+    row2.appendChild(ins);
+  }
   if (p.targetPrice !== null) {
     const target = document.createElement('span');
     target.title = 'Target price';

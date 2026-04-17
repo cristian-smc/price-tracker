@@ -22,7 +22,8 @@ export async function checkProduct(productId) {
   // Lazy migration: wrap single URL into sources array
   product = ensureSources(product);
 
-  const previousPrice = product.currentPrice;
+  const previousPrice  = product.currentPrice;
+  const previousInStock = product.inStock ?? null;
 
   // Check every source
   const updatedSources = [];
@@ -59,6 +60,7 @@ export async function checkProduct(productId) {
     currentPrice: newPrice,
     currency: bestSource?.currency ?? product.currency,
     thumbnail: bestSource?.thumbnail ?? product.thumbnail,
+    inStock: bestSource?.inStock ?? null,
     lastChecked: Date.now(),
     consecutiveErrors: 0,
     consecutiveNulls: 0,
@@ -66,7 +68,7 @@ export async function checkProduct(productId) {
   };
 
   await maybeRecord(productId, updatedProduct.currentPrice);
-  const notifId = await maybeNotify(updatedProduct, previousPrice);
+  const notifId = await maybeNotify(updatedProduct, previousPrice, previousInStock);
   if (notifId) updatedProduct.lastNotified = Date.now();
 
   await saveProduct(updatedProduct);
@@ -133,6 +135,7 @@ async function checkOneSource(source) {
     currentPrice: result.price ?? source.currentPrice,
     currency: result.currency ?? source.currency,
     thumbnail: result.thumbnail ?? source.thumbnail,
+    inStock: result.inStock ?? null,
     lastChecked: Date.now(),
     consecutiveErrors: 0,
     consecutiveNulls,
@@ -188,10 +191,18 @@ function resolveSelectorsForSource(source, result) {
 
 function pickBestSource(sources) {
   const withPrice = sources.filter((s) => s.currentPrice != null && s.consecutiveErrors === 0);
-  if (withPrice.length > 0) {
-    return withPrice.reduce((best, s) => s.currentPrice < best.currentPrice ? s : best);
-  }
-  return sources[0] ?? null;
+  if (withPrice.length === 0) return sources[0] ?? null;
+
+  const lowest = (arr) => arr.reduce((best, s) => s.currentPrice < best.currentPrice ? s : best);
+
+  // Prefer confirmed in-stock, then unknown, then OOS as last resort
+  const inStock  = withPrice.filter((s) => s.inStock === true);
+  if (inStock.length > 0)  return lowest(inStock);
+
+  const unknown  = withPrice.filter((s) => s.inStock == null);
+  if (unknown.length > 0)  return lowest(unknown);
+
+  return lowest(withPrice); // all OOS — still surface the lowest price
 }
 
 // ── Price stats ───────────────────────────────────────────────────────────────

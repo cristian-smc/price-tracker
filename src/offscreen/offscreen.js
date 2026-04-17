@@ -28,28 +28,29 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 async function handleParse({ html, userSelector }) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const thumbnail = extractThumbnail(doc);
+  const inStock = extractStock(doc);
 
   // ── Strategy 1: User-defined selector ─────────────────────────────────────
   if (userSelector) {
     const result = trySelector(doc, userSelector);
-    if (result) return { ...result, strategy: 1, selectorUsed: userSelector, thumbnail };
+    if (result) return { ...result, strategy: 1, selectorUsed: userSelector, thumbnail, inStock };
   }
 
   // ── Strategy 2: JSON-LD ───────────────────────────────────────────────────
   const jsonLd = tryJsonLd(doc);
-  if (jsonLd) return { ...jsonLd, strategy: 2, selectorUsed: 'json-ld', thumbnail };
+  if (jsonLd) return { ...jsonLd, strategy: 2, selectorUsed: 'json-ld', thumbnail, inStock };
 
   // ── Strategy 3: Open Graph ────────────────────────────────────────────────
   const og = tryOpenGraph(doc);
-  if (og) return { ...og, strategy: 3, selectorUsed: 'og:price', thumbnail };
+  if (og) return { ...og, strategy: 3, selectorUsed: 'og:price', thumbnail, inStock };
 
   // ── Strategy 4: Heuristic selectors ──────────────────────────────────────
   for (const sel of HEURISTIC_SELECTORS) {
     const result = trySelector(doc, sel);
-    if (result) return { ...result, strategy: 4, selectorUsed: sel, thumbnail };
+    if (result) return { ...result, strategy: 4, selectorUsed: sel, thumbnail, inStock };
   }
 
-  return { price: null, currency: null, strategy: null, selectorUsed: null, thumbnail };
+  return { price: null, currency: null, strategy: null, selectorUsed: null, thumbnail, inStock };
 }
 
 function extractThumbnail(doc) {
@@ -117,6 +118,69 @@ function playBeep() {
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + 0.4);
   osc.onended = () => ctx.close();
+}
+
+// ── Stock extraction ──────────────────────────────────────────────────────────
+
+/**
+ * Extract in-stock status from a DOMParser document (static HTML).
+ * Returns true (in stock), false (out of stock), or null (unknown).
+ */
+function extractStock(doc) {
+  // 1. Sylius platform
+  if (doc.querySelector('#sylius-product-out-of-stock'))  return false;
+  if (doc.querySelector('#sylius-product-adding-to-cart')) return true;
+
+  // 2. JSON-LD schema.org offers.availability
+  for (const s of doc.querySelectorAll('script[type="application/ld+json"]')) {
+    try {
+      const schemas = [JSON.parse(s.textContent)].flat();
+      for (const sc of schemas) {
+        const r = ldAvailability(sc);
+        if (r !== null) return r;
+      }
+    } catch { /* malformed — skip */ }
+  }
+
+  // 3. OpenGraph product:availability
+  const ogRaw = (doc.querySelector('meta[property="product:availability"]')?.getAttribute('content') ?? '').toLowerCase().replaceAll(/\s+/g, '');
+  if (ogRaw === 'instock')                       return true;
+  if (ogRaw === 'outofstock' || ogRaw === 'oos') return false;
+
+  // 4. itemprop="availability"
+  const availEl = doc.querySelector('[itemprop="availability"]');
+  if (availEl) {
+    const v = (availEl.getAttribute('content') || availEl.getAttribute('href') || availEl.textContent).toLowerCase();
+    if (/instock/.test(v))                         return true;
+    if (/outofstock|out[\s-]of[\s-]stock/.test(v)) return false;
+  }
+
+  // 5. Common e-commerce class / attribute patterns
+  if (doc.querySelector('.stock.out-of-stock, [data-stock="outofstock"], [data-availability="out-of-stock"], [data-available="false"]')) return false;
+  if (doc.querySelector('.stock.in-stock,     [data-stock="instock"],    [data-availability="in-stock"],    [data-available="true"]'))  return true;
+
+  // 6. textContent scan — static HTML, so we read from <body>
+  const bodyText = (doc.body?.textContent ?? '').toLowerCase();
+  const OOS = ['out of stock', 'sold out', 'nu este in stoc', 'nu este \u00een stoc', 'stoc epuizat', 'indisponibil', 'nicht auf lager', 'fuori stock', 'sin stock'];
+  const INS = ['add to cart', 'add to basket', 'adauga in cos', 'adaug\u0103 \u00een co\u0219', 'buy now'];
+  for (const p of OOS) { if (bodyText.includes(p)) return false; }
+  for (const p of INS) { if (bodyText.includes(p)) return true; }
+
+  return null;
+}
+
+function ldAvailability(schema) {
+  if (schema['@graph']) {
+    for (const n of schema['@graph']) { const r = ldAvailability(n); if (r !== null) return r; }
+  }
+  const t = [schema['@type'] ?? []].flat().join(',').toLowerCase();
+  if (!t.includes('product')) return null;
+  for (const offer of [schema.offers ?? []].flat()) {
+    const v = String(offer.availability ?? '').toLowerCase();
+    if (v.includes('instock'))    return true;
+    if (v.includes('outofstock')) return false;
+  }
+  return null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
