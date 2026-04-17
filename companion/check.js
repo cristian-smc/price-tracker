@@ -567,12 +567,17 @@ async function main() {
   const state = loadState();
   log(`Checking ${products.length} product(s)…`);
 
+  let belowTarget = 0;
   for (const product of products) {
     await checkOneProduct(product, state);
+    const s = state[product.id];
+    if (s && product.targetPrice != null && s.lastPrice != null && s.lastPrice <= product.targetPrice && s.inStock !== false) {
+      belowTarget++;
+    }
   }
 
   saveState(state);
-  log('Done.');
+  log(`Done. BELOW_TARGET=${belowTarget} TOTAL=${products.length}`);
 }
 
 main().catch((err) => {
