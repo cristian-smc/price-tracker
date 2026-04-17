@@ -175,7 +175,7 @@ ok "Boot script: $BOOT_SCRIPT"
 
 step 8 "Installing home-screen widget shortcuts…"
 
-SHORTCUTS_DIR="$HOME/.shortcuts"
+SHORTCUTS_DIR="$HOME/.shortcuts/tasks"
 mkdir -p "$SHORTCUTS_DIR"
 
 WIDGET_DIR="$SCRIPT_DIR/widget"
@@ -187,7 +187,7 @@ for w in "${WIDGETS[@]}"; do
   if [[ -f "$src" ]]; then
     cp "$src" "$dst"
     chmod +x "$dst"
-    ok "Shortcut installed: ~/.shortcuts/$w"
+    ok "Shortcut installed: ~/.shortcuts/tasks/$w"
   else
     warn "Widget script not found: $src"
   fi
