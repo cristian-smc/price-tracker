@@ -94,6 +94,18 @@ export function renderProductDetail({
     wrap.appendChild(stats);
   }
 
+  // ── Check now (inline, below price stats) ────────────────────────────────
+  const checkBtn = document.createElement('button');
+  checkBtn.className = 'btn btn-primary';
+  checkBtn.style.alignSelf = 'flex-start';
+  checkBtn.textContent = 'Check now';
+  checkBtn.addEventListener('click', () => {
+    checkBtn.disabled = true;
+    checkBtn.innerHTML = '<span class="spinner"></span> Checking…';
+    onCheckNow(product.id);
+  });
+  wrap.appendChild(checkBtn);
+
   // ── Sparkline ─────────────────────────────────────────────────────────────
   const chartContainer = document.createElement('div');
   chartContainer.className = 'sparkline-container';
@@ -183,15 +195,6 @@ export function renderProductDetail({
   const actions = document.createElement('div');
   actions.className = 'detail-actions';
 
-  const checkBtn = document.createElement('button');
-  checkBtn.className = 'btn btn-primary';
-  checkBtn.textContent = 'Check now';
-  checkBtn.addEventListener('click', () => {
-    checkBtn.disabled = true;
-    checkBtn.innerHTML = '<span class="spinner"></span> Checking…';
-    onCheckNow(product.id);
-  });
-
   const editBtn = document.createElement('button');
   editBtn.className = 'btn btn-secondary';
   editBtn.textContent = 'Edit';
@@ -211,7 +214,6 @@ export function renderProductDetail({
     }
   });
 
-  actions.appendChild(checkBtn);
   actions.appendChild(editBtn);
   actions.appendChild(toggleBtn);
   actions.appendChild(deleteBtn);

@@ -402,6 +402,11 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     return null;
   }
 
+  // How long the lowest price must remain unchanged before we consider the
+  // search settled. Google Flights loads results progressively over ~10 s, so
+  // we keep watching until the price has been stable for this window.
+  const STABLE_WINDOW_MS = 4000;
+
   let sent = false;
   function send(data) {
     if (sent) return;
@@ -414,26 +419,70 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     return tryExtract() ?? tryExtractByText();
   }
 
-  const initial = tryAll();
+  // Track the lowest price seen so far from text-scan (aggregator) results.
+  let bestPrice    = null;
+  let bestRaw      = null;
+  let bestSelector = null;
+  let stableTimer  = null;
+
+  // Reset the stable-window timer only when the lowest price improves.
+  // If the page keeps mutating (spinners, ads) without a better price, the
+  // timer is left alone and fires naturally after STABLE_WINDOW_MS.
+  function updateBest(price, raw, selectorUsed) {
+    if (bestPrice === null || price < bestPrice) {
+      bestPrice    = price;
+      bestRaw      = raw;
+      bestSelector = selectorUsed;
+      // New lower price found — restart the stable-window countdown.
+      if (stableTimer) clearTimeout(stableTimer);
+      stableTimer = setTimeout(() => {
+        observer.disconnect();
+        send({ price: bestPrice, currency: detectCurrency(bestRaw) ?? 'USD', selectorUsed: bestSelector, strategy: 4, inStock: extractStock() });
+      }, STABLE_WINDOW_MS);
+      timers.push(stableTimer);
+    }
+  }
+
+  // For user-defined CSS selectors (non-aggregator pages) we still send
+  // immediately — only text-scan results get the stabilisation delay.
+  const initial = tryExtract();
   if (initial) {
     const price = parseMinorUnits(initial.raw);
     if (price > 0) { send({ price, currency: detectCurrency(initial.raw) ?? 'USD', selectorUsed: initial.selectorUsed, strategy: 4, inStock: extractStock() }); return; }
   }
 
+  // No selector hit — check text scan and prime the best-price tracker.
+  const initialText = tryExtractByText();
+  if (initialText) {
+    const price = parseMinorUnits(initialText.raw);
+    if (price > 0) updateBest(price, initialText.raw, initialText.selectorUsed);
+  }
+
   const observer = new MutationObserver(() => {
     tryDismissConsent();
-    const r = tryAll();
-    if (r) {
-      const price = parseMinorUnits(r.raw);
+    // Prefer exact-selector hit (non-aggregator page updated its price).
+    const exact = tryExtract();
+    if (exact) {
+      const price = parseMinorUnits(exact.raw);
       if (price > 0) {
         observer.disconnect();
-        send({ price, currency: detectCurrency(r.raw) ?? 'USD', selectorUsed: r.selectorUsed, strategy: 4, inStock: extractStock() });
+        send({ price, currency: detectCurrency(exact.raw) ?? 'USD', selectorUsed: exact.selectorUsed, strategy: 4, inStock: extractStock() });
         return;
       }
     }
+    // Aggregator page: only resets the stable timer if a new lower price appears.
+    const r = tryExtractByText();
+    if (r) {
+      const price = parseMinorUnits(r.raw);
+      if (price > 0) updateBest(price, r.raw, r.selectorUsed);
+    }
     if (Date.now() - start > MAX_WAIT) {
       observer.disconnect();
-      send({ price: null, currency: null, selectorUsed: null, strategy: null, inStock: extractStock() });
+      if (bestPrice > 0) {
+        send({ price: bestPrice, currency: detectCurrency(bestRaw) ?? 'USD', selectorUsed: bestSelector, strategy: 4, inStock: extractStock() });
+      } else {
+        send({ price: null, currency: null, selectorUsed: null, strategy: null, inStock: extractStock() });
+      }
     }
   });
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
@@ -444,12 +493,17 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   // on a "quiet" page, causing the 45 s outer timeout to fire instead (→ error).
   timers.push(setTimeout(() => {
     observer.disconnect();
-    const last = tryAll();
-    const price = last ? parseMinorUnits(last.raw) : null;
-    if (price > 0) {
-      send({ price, currency: detectCurrency(last.raw) ?? 'USD', selectorUsed: last.selectorUsed, strategy: 4, inStock: extractStock() });
+    if (stableTimer) clearTimeout(stableTimer);
+    if (bestPrice > 0) {
+      send({ price: bestPrice, currency: detectCurrency(bestRaw) ?? 'USD', selectorUsed: bestSelector, strategy: 4, inStock: extractStock() });
     } else {
-      send({ price: null, currency: null, selectorUsed: null, strategy: null, inStock: extractStock() });
+      const last = tryExtractByText();
+      const price = last ? parseMinorUnits(last.raw) : null;
+      if (price > 0) {
+        send({ price, currency: detectCurrency(last.raw) ?? 'USD', selectorUsed: last.selectorUsed, strategy: 4, inStock: extractStock() });
+      } else {
+        send({ price: null, currency: null, selectorUsed: null, strategy: null, inStock: extractStock() });
+      }
     }
   }, Math.max(MAX_WAIT - (Date.now() - start), 500)));
 }

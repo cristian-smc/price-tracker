@@ -110,7 +110,7 @@ body {
 .product-card:hover { box-shadow: var(--shadow); }
 
 .product-card .row1 { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-.product-card .name { font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.product-card .name { font-weight: 500; font-size: 13px; overflow-wrap: break-word; max-width: 220px; }
 .product-card .price { font-size: 15px; font-weight: 700; white-space: nowrap; }
 .product-card .price.drop { color: var(--success); }
 
@@ -160,7 +160,7 @@ body {
 
 /* ── Product detail view ─────────────────────────────────────── */
 .detail-view { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
-.detail-view h2 { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-view h2 { font-size: 14px; font-weight: 600; overflow-wrap: break-word; }
 
 .price-row { display: flex; align-items: baseline; gap: 10px; }
 .price-big { font-size: 24px; font-weight: 700; }
