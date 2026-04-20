@@ -110,6 +110,8 @@ export async function tabFetchAndExtract(product) {
   let tabsListener = null;
   let msgListener  = null;
   let visScriptId  = null;
+  let activatedListener = null;
+  let checkTabWasActivated = false;
 
   try {
     const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -143,6 +145,13 @@ export async function tabFetchAndExtract(product) {
       ...(currentTab?.windowId != null && { windowId: currentTab.windowId }),
     });
     tabId = tab.id;
+
+    // Track if the price-check tab gets activated (redirect, page-level window.focus(), etc.)
+    // so we only restore the user's tab when something actually stole focus.
+    activatedListener = (activeInfo) => {
+      if (activeInfo.tabId === tabId) checkTabWasActivated = true;
+    };
+    chrome.tabs.onActivated.addListener(activatedListener);
 
     const result = await Promise.race([
       // Re-inject on every status=complete event so redirects are handled:
@@ -207,12 +216,16 @@ export async function tabFetchAndExtract(product) {
       error: err.message,
     };
   } finally {
-    // Always clean up both listeners regardless of how the promise settled.
     if (tabsListener) chrome.tabs.onUpdated.removeListener(tabsListener);
     if (msgListener)  chrome.runtime.onMessage.removeListener(msgListener);
+    if (activatedListener) chrome.tabs.onActivated.removeListener(activatedListener);
+    // Restore focus BEFORE removing the tab — if Chrome auto-picks a new active tab
+    // on removal the user sees an extra switch. Only restore when focus was actually stolen.
+    if (previousTabId !== null && checkTabWasActivated) {
+      await chrome.tabs.update(previousTabId, { active: true }).catch(() => {});
+    }
     if (windowId !== null) chrome.windows.remove(windowId).catch(() => {});
     else if (tabId !== null) chrome.tabs.remove(tabId).catch(() => {});
-    if (previousTabId !== null) chrome.tabs.update(previousTabId, { active: true }).catch(() => {});
     if (visScriptId) chrome.scripting.unregisterContentScripts({ ids: [visScriptId] }).catch(() => {});
   }
 }

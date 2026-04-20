@@ -84,12 +84,14 @@ function playSound() {
 
 async function sendMobilePush(url, title, message) {
   try {
+    const encoder = new TextEncoder();
+    const encoded = encoder.encode(title);
+    const base64 = btoa(String.fromCodePoint(...encoded));
+    const rfc2047Title = `=?UTF-8?B?${base64}?=`;
+
     await fetch(url, {
       method: 'POST',
-      // HTTP headers are ISO-8859-1 only — URL-encode the title so Unicode
-      // characters (arrows, accents, currency symbols) don't throw.
-      // ntfy.sh decodes percent-encoded Title headers automatically.
-      headers: { 'Title': encodeURIComponent(title), 'Content-Type': 'text/plain; charset=utf-8' },
+      headers: { 'Title': rfc2047Title, 'Content-Type': 'text/plain; charset=utf-8' },
       body: message,
     });
   } catch {

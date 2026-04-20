@@ -268,13 +268,13 @@ function buildCard(p, onSelect, onReorder) {
     let newOrder;
     if (insertBefore) {
       let prev = card.previousElementSibling;
-      while (prev && prev.dataset.id === draggedId) prev = prev.previousElementSibling;
-      const prevOrder = prev ? parseFloat(prev.dataset.sortOrder) : targetOrder + 2;
+      while (prev?.dataset.id === draggedId) prev = prev.previousElementSibling;
+      const prevOrder = prev ? Number.parseFloat(prev.dataset.sortOrder) : targetOrder + 2;
       newOrder = (prevOrder + targetOrder) / 2;
     } else {
       let next = card.nextElementSibling;
-      while (next && next.dataset.id === draggedId) next = next.nextElementSibling;
-      const nextOrder = next ? parseFloat(next.dataset.sortOrder) : targetOrder - 2;
+      while (next?.dataset.id === draggedId) next = next.nextElementSibling;
+      const nextOrder = next ? Number.parseFloat(next.dataset.sortOrder) : targetOrder - 2;
       newOrder = (targetOrder + nextOrder) / 2;
     }
 

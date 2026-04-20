@@ -29,7 +29,6 @@ async function handleParse({ html, userSelector }) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const thumbnail = extractThumbnail(doc);
   const inStock = extractStock(doc);
-
   // ── Strategy 1: User-defined selector ─────────────────────────────────────
   if (userSelector) {
     const result = trySelector(doc, userSelector);

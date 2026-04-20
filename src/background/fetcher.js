@@ -72,7 +72,7 @@ async function fetchWithRotation(url) {
 
       const html = await resp.text();
       // Detect canonical URL from redirect chain (fetch follows redirects)
-      const finalUrl = resp.url !== url ? resp.url : null;
+      const finalUrl = resp.url === url ? null : resp.url;
       return { html, finalUrl };
     } catch (err) {
       if (err.message?.startsWith('HTTP')) continue;
