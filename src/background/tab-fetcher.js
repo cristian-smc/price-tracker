@@ -313,6 +313,25 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     return null;
   }
 
+  // When an element exposes the price via data-price/content attribute (e.g.
+  // emag.ro's <p data-price="1232">1.232<sup>00</sup> Lei</p>), `raw` is just
+  // a number and detectCurrency returns null. Look around the document for a
+  // currency hint before callers fall back to USD.
+  function detectCurrencyFromDoc() { // NOSONAR
+    const curEl = document.querySelector('[itemprop="priceCurrency"]');
+    if (curEl) {
+      const v = (curEl.getAttribute('content') || curEl.textContent || '').trim().toUpperCase();
+      if (/^[A-Z]{3}$/.test(v)) return v;
+    }
+    const og = document.querySelector('meta[property="product:price:currency"]')?.getAttribute('content');
+    if (og && /^[A-Za-z]{3}$/.test(og.trim())) return og.trim().toUpperCase();
+    return detectCurrency(document.body?.textContent ?? '');
+  }
+
+  function resolveCurrency(raw) { // NOSONAR
+    return detectCurrency(raw) ?? detectCurrencyFromDoc() ?? 'USD';
+  }
+
   function parseMinorUnits(raw) { // NOSONAR — must stay nested: executeScript serialises only tabExtractor into the page context
     const cleaned = raw.replaceAll(/[^\d.,]/g, '').trim();
     if (!cleaned || !/\d/.test(cleaned)) return null;
@@ -456,7 +475,7 @@ function tabExtractor({ tabId, userSelector, selectors }) {
         if (stableTimer) clearTimeout(stableTimer);
         stableTimer = setTimeout(() => {
           observer.disconnect();
-          send({ price: bestPrice, currency: detectCurrency(bestRaw) ?? 'USD', selectorUsed: bestSelector, strategy: 4, inStock: extractStock() });
+          send({ price: bestPrice, currency: resolveCurrency(bestRaw), selectorUsed: bestSelector, strategy: 4, inStock: extractStock() });
         }, STABLE_WINDOW_MS);
         timers.push(stableTimer);
       }
@@ -468,7 +487,7 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   const initial = tryExtract();
   if (initial) {
     const price = parseMinorUnits(initial.raw);
-    if (price > 0) { send({ price, currency: detectCurrency(initial.raw) ?? 'USD', selectorUsed: initial.selectorUsed, strategy: 4, inStock: extractStock() }); return; }
+    if (price > 0) { send({ price, currency: resolveCurrency(initial.raw), selectorUsed: initial.selectorUsed, strategy: 4, inStock: extractStock() }); return; }
   }
 
   // No selector hit — prime best-price from the initial page state but do NOT
@@ -488,7 +507,7 @@ function tabExtractor({ tabId, userSelector, selectors }) {
       const price = parseMinorUnits(exact.raw);
       if (price > 0) {
         observer.disconnect();
-        send({ price, currency: detectCurrency(exact.raw) ?? 'USD', selectorUsed: exact.selectorUsed, strategy: 4, inStock: extractStock() });
+        send({ price, currency: resolveCurrency(exact.raw), selectorUsed: exact.selectorUsed, strategy: 4, inStock: extractStock() });
         return;
       }
     }
@@ -501,7 +520,7 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     if (Date.now() - start > MAX_WAIT) {
       observer.disconnect();
       if (bestPrice > 0) {
-        send({ price: bestPrice, currency: detectCurrency(bestRaw) ?? 'USD', selectorUsed: bestSelector, strategy: 4, inStock: extractStock() });
+        send({ price: bestPrice, currency: resolveCurrency(bestRaw), selectorUsed: bestSelector, strategy: 4, inStock: extractStock() });
       } else {
         send({ price: null, currency: null, selectorUsed: null, strategy: null, inStock: extractStock() });
       }
@@ -517,12 +536,12 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     observer.disconnect();
     if (stableTimer) clearTimeout(stableTimer);
     if (bestPrice > 0) {
-      send({ price: bestPrice, currency: detectCurrency(bestRaw) ?? 'USD', selectorUsed: bestSelector, strategy: 4, inStock: extractStock() });
+      send({ price: bestPrice, currency: resolveCurrency(bestRaw), selectorUsed: bestSelector, strategy: 4, inStock: extractStock() });
     } else {
       const last = tryExtractByText();
       const price = last ? parseMinorUnits(last.raw) : null;
       if (price > 0) {
-        send({ price, currency: detectCurrency(last.raw) ?? 'USD', selectorUsed: last.selectorUsed, strategy: 4, inStock: extractStock() });
+        send({ price, currency: resolveCurrency(last.raw), selectorUsed: last.selectorUsed, strategy: 4, inStock: extractStock() });
       } else {
         send({ price: null, currency: null, selectorUsed: null, strategy: null, inStock: extractStock() });
       }

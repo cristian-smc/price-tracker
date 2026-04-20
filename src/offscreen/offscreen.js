@@ -201,10 +201,74 @@ function trySelector(doc, selector) {
     const parsed = parsePrice(raw.trim());
     if (!parsed) return null;
 
+    // parsePrice defaults to USD when no symbol is found in `raw`. On sites
+    // like emag.ro the value lives in a data-price/content attribute while
+    // the currency ("Lei") is in a sibling element — so `raw` has no token.
+    // Consult the document before accepting the USD fallback.
+    if (!hasCurrencyToken(raw)) {
+      const hint = currencyHintFromDoc(doc, el);
+      if (hint) parsed.currency = hint;
+    }
+
     return { price: parsed.value, currency: parsed.currency };
   } catch {
     return null;
   }
+}
+
+const CURRENCY_TOKEN_RE = /[€£¥₩₹₺₽₴₪฿₱$]|\b(USD|EUR|GBP|JPY|KRW|RON|PLN|HUF|CZK|SEK|NOK|DKK|CHF|CNY|INR|BRL|MXN|NZD|SGD|HKD|TWD|TRY|RUB|UAH|ILS|AED|SAR|THB|MYR|IDR|PHP|AUD|CAD)\b|\blei\b|zł|Kč|\bFt\b|Rp|\bRM\b/i;
+
+function hasCurrencyToken(s) {
+  return typeof s === 'string' && CURRENCY_TOKEN_RE.test(s);
+}
+
+/**
+ * Best-effort currency lookup for a price element whose raw value had no
+ * currency token. Scans, in priority order: itemprop="priceCurrency",
+ * og:price:currency meta, ancestor data-currency, element textContent,
+ * ancestor textContent, full body textContent.
+ */
+function currencyHintFromDoc(doc, priceEl) {
+  const curEl = doc.querySelector('[itemprop="priceCurrency"]');
+  if (curEl) {
+    const v = (curEl.getAttribute('content') || curEl.textContent || '').trim().toUpperCase();
+    if (/^[A-Z]{3}$/.test(v)) return v;
+  }
+  const og = doc.querySelector('meta[property="product:price:currency"]')?.getAttribute('content');
+  if (og && /^[A-Za-z]{3}$/.test(og.trim())) return og.trim().toUpperCase();
+
+  let n = priceEl;
+  for (let i = 0; n && n.nodeType === 1 && i < 6; n = n.parentElement, i++) {
+    const dc = n.getAttribute?.('data-currency');
+    if (dc && /^[A-Za-z]{3}$/.test(dc.trim())) return dc.trim().toUpperCase();
+  }
+
+  const elText = tokenScan(priceEl.textContent);
+  if (elText) return elText;
+
+  let anc = priceEl.parentElement;
+  for (let i = 0; anc && i < 4; anc = anc.parentElement, i++) {
+    const hit = tokenScan(anc.textContent);
+    if (hit) return hit;
+  }
+
+  return tokenScan(doc.body?.textContent);
+}
+
+function tokenScan(s) {
+  if (!s) return null;
+  if (/\blei\b|\bRON\b/i.test(s)) return 'RON';
+  if (/€|\bEUR\b/.test(s))         return 'EUR';
+  if (/£|\bGBP\b/.test(s))         return 'GBP';
+  if (/¥|\bJPY\b/.test(s))         return 'JPY';
+  if (/₩|\bKRW\b/.test(s))         return 'KRW';
+  if (/zł|\bPLN\b/i.test(s))       return 'PLN';
+  if (/\bFt\b|\bHUF\b/.test(s))    return 'HUF';
+  if (/\bCHF\b/.test(s))           return 'CHF';
+  if (/Kč|\bCZK\b/i.test(s))       return 'CZK';
+  if (/₽|\bRUB\b/i.test(s))        return 'RUB';
+  if (/\$|\bUSD\b/.test(s))        return 'USD';
+  return null;
 }
 
 /**
