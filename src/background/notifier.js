@@ -47,13 +47,16 @@ export async function maybeNotify(product, previousPrice, previousInStock = null
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function detectEvent(product, previousPrice, previousInStock) {
-  const { currentPrice, targetPrice, sellThreshold, inStock } = product;
+  const { currentPrice, targetPrice, sellThreshold, inStock, checkStockEnabled } = product;
 
-  // Back-in-stock: was confirmed OOS last run, now available
-  if (inStock === true && previousInStock === false) return 'back_in_stock';
+  // Only process stock status if stock checking is enabled
+  if (checkStockEnabled !== false) {
+    // Back-in-stock: was confirmed OOS last run, now available
+    if (inStock === true && previousInStock === false) return 'back_in_stock';
 
-  // Suppress price/sell alerts when confirmed out of stock
-  if (inStock === false) return null;
+    // Suppress price/sell alerts when confirmed out of stock
+    if (inStock === false) return null;
+  }
 
   if (currentPrice !== null && targetPrice !== null && currentPrice < targetPrice) {
     return 'price_drop';

@@ -113,6 +113,9 @@ async function showDetail(productId) {
     onToggleNotification: async (id, notificationEnabled) => {
       await send({ type: MSG.UPDATE_PRODUCT, id, data: { notificationEnabled } });
     },
+    onToggleStockCheck: async (id, checkStockEnabled) => {
+      await send({ type: MSG.UPDATE_PRODUCT, id, data: { checkStockEnabled } });
+    },
     onAddSource: async (productId, url) => {
       const resp = await send({ type: MSG.ADD_SOURCE, productId, url });
       if (!resp?.error) await showDetail(productId);

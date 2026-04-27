@@ -12,28 +12,17 @@
  */
 
 // ── Publisher defaults (fallback when user has no tag configured) ─────────────
-const PUBLISHER_AMAZON_TAG    = 'cristiansmc-20';
-const PUBLISHER_SKIMLINKS_ID  = '301449X178941';
+const PUBLISHER_AMAZON_TAG = 'cristiansmc-20';
 
 const RULES = [
   {
-    // Amazon — all storefronts. Takes priority over Skimlinks (higher commission rate).
+    // Amazon — all storefronts
     match: /\bamazon\.(com|co\.uk|de|fr|it|es|ca|com\.au|co\.jp|in|com\.br|com\.mx|nl|pl|se|sg|ae|com\.tr)$/,
     apply: (u, settings) => {
       const tag = settings.affiliateAmazonTag || PUBLISHER_AMAZON_TAG;
       if (!tag) return null;
       u.searchParams.set('tag', tag);
       return u.toString();
-    },
-  },
-  {
-    // Skimlinks — catches any other merchant they support (40,000+ retailers).
-    // Amazon is excluded above so it always uses the higher Associates rate.
-    match: /.*/,
-    apply: (u, settings) => {
-      const id = settings.affiliateSkimlinksId || PUBLISHER_SKIMLINKS_ID;
-      if (!id) return null;
-      return `https://go.skimlinks.com/?id=${encodeURIComponent(id)}&url=${encodeURIComponent(u.toString())}`;
     },
   },
 ];

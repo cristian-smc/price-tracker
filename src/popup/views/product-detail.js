@@ -10,6 +10,7 @@
  *   onCheckNow: (id: string) => void,
  *   onToggleEnabled: (id: string, enabled: boolean) => void,
  *   onToggleNotification: (id: string, enabled: boolean) => void,
+ *   onToggleStockCheck: (id: string, enabled: boolean) => void,
  * }} opts
  */
 
@@ -27,6 +28,7 @@ export function renderProductDetail({
   onCheckNow,
   onToggleEnabled,
   onToggleNotification,
+  onToggleStockCheck,
   onAddSource,
   onRemoveSource,
 }) {
@@ -190,6 +192,26 @@ export function renderProductDetail({
   notifRow.appendChild(notifLabel);
   notifRow.appendChild(notifLabel2);
   wrap.appendChild(notifRow);
+
+  // ── Stock check toggle ────────────────────────────────────────────────────
+  const stockRow = document.createElement('div');
+  stockRow.className = 'toggle-row';
+  const stockLabel = document.createElement('span');
+  stockLabel.textContent = 'Check stock status';
+  stockLabel.title = 'When enabled, out-of-stock items are hidden and price alerts are paused. When disabled, price alerts trigger regardless of stock status.';
+  const stockLabel2 = document.createElement('label');
+  stockLabel2.className = 'toggle';
+  const stockInput = document.createElement('input');
+  stockInput.type = 'checkbox';
+  stockInput.checked = product.checkStockEnabled !== false;
+  stockInput.addEventListener('change', () => onToggleStockCheck(product.id, stockInput.checked));
+  const stockSlider = document.createElement('span');
+  stockSlider.className = 'toggle-slider';
+  stockLabel2.appendChild(stockInput);
+  stockLabel2.appendChild(stockSlider);
+  stockRow.appendChild(stockLabel);
+  stockRow.appendChild(stockLabel2);
+  wrap.appendChild(stockRow);
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const actions = document.createElement('div');

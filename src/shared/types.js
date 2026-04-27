@@ -28,6 +28,7 @@
  *   intervalMinutes: number,
  *   enabled: boolean,
  *   notificationEnabled: boolean,
+ *   checkStockEnabled: boolean,
  *   selectors: { price: string|null },
  *   requiresTabExtraction: boolean,
  *   sources: Source[],

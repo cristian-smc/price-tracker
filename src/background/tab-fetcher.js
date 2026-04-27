@@ -281,10 +281,67 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     }
   }
 
+  // ── Modal / pop-up dismissal ───────────────────────────────────────────────
+  function tryDismissModal() { // NOSONAR
+    // Try to find and click close buttons on modals
+    const closeSelectors = [
+      'button[aria-label="Close"]',
+      '[data-testid="close-modal"]',
+      '.modal-close',
+      '.dialog-close',
+      '.popup-close',
+      'button[class*="close"]',
+      '[class*="close-btn"]',
+    ];
+
+    for (const sel of closeSelectors) {
+      try {
+        const el = document.querySelector(sel);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            el.click();
+            return true;
+          }
+        }
+      } catch { /* bad selector */ }
+    }
+
+    // Try to find modals/dialogs by common class/role patterns and remove overlay
+    const modalPatterns = [
+      '[role="dialog"]',
+      '[role="alertdialog"]',
+      '.modal',
+      '.popup',
+      '.modal-backdrop',
+      '.overlay',
+      '[class*="modal"]',
+      '[class*="popup"]',
+      '[class*="dialog"]',
+    ];
+
+    for (const sel of modalPatterns) {
+      try {
+        const modal = document.querySelector(sel);
+        if (modal && modal.offsetParent !== null) {
+          // Try to find ESC-key dismissible dialogs or ones with explicit close
+          const closeBtn = modal.querySelector('button[aria-label*="close" i], [class*="close"], .close-btn');
+          if (closeBtn) {
+            closeBtn.click();
+            return true;
+          }
+        }
+      } catch { /* bad selector */ }
+    }
+
+    return false;
+  }
+
   tryDismissConsent();
+  tryDismissModal();
   const timers = [
-    setTimeout(tryDismissConsent, 1500),
-    setTimeout(tryDismissConsent, 4000),
+    setTimeout(() => { tryDismissConsent(); tryDismissModal(); }, 1500),
+    setTimeout(() => { tryDismissConsent(); tryDismissModal(); }, 4000),
   ];
 
   // ── Price extraction ──────────────────────────────────────────────────────
@@ -501,6 +558,7 @@ function tabExtractor({ tabId, userSelector, selectors }) {
 
   const observer = new MutationObserver(() => {
     tryDismissConsent();
+    tryDismissModal();
     // Prefer exact-selector hit (non-aggregator page updated its price).
     const exact = tryExtract();
     if (exact) {

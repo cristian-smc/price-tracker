@@ -52,7 +52,6 @@ async function loadSettings() {
   setSelectValue('default-currency', settings.defaultCurrency ?? 'USD');
   document.getElementById('history-max').value = String(settings.historyMaxPoints ?? 500);
   document.getElementById('affiliate-amazon').value = settings.affiliateAmazonTag ?? '';
-  document.getElementById('affiliate-skimlinks').value = settings.affiliateSkimlinksId ?? '';
   document.getElementById('gist-token').value = settings.gistToken ?? '';
   document.getElementById('gist-id').value = settings.gistId ?? '';
 }
@@ -77,7 +76,6 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     defaultCurrency: document.getElementById('default-currency').value,
     historyMaxPoints: Math.max(50, Math.min(5000, Number(document.getElementById('history-max').value))),
     affiliateAmazonTag: document.getElementById('affiliate-amazon').value.trim(),
-    affiliateSkimlinksId: document.getElementById('affiliate-skimlinks').value.trim(),
     gistToken: document.getElementById('gist-token').value.trim(),
   };
 

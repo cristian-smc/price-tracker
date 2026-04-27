@@ -111,7 +111,7 @@ async function handleAddProduct(data) {
     targetPrice: data.targetPrice ?? null, sellThreshold: data.sellThreshold ?? null,
     currency: data.currency ?? DEFAULT_SETTINGS.defaultCurrency,
     intervalMinutes: data.intervalMinutes ?? DEFAULT_SETTINGS.defaultInterval,
-    enabled: true, notificationEnabled: data.notificationEnabled !== false,
+    enabled: true, notificationEnabled: data.notificationEnabled !== false, checkStockEnabled: true,
     selectors: { price: data.priceSelector ?? null },
     requiresTabExtraction: false, sources: [], bestSourceId: null,
     currentPrice: null,
