@@ -245,7 +245,7 @@
   <header class="page-header">
     <div class="page-header-inner">
       <h1>Privacy Policy</h1>
-      <p class="last-updated">Last updated: 2026-04-14</p>
+      <p class="last-updated">Last updated: 2026-04-28</p>
     </div>
   </header>
 
@@ -254,7 +254,7 @@
 
     <div class="intro-callout">
       <strong>The short version</strong>
-      PriceWatch does not collect, transmit, or sell your personal data. Everything the extension stores lives in your browser and never leaves your device, unless you explicitly configure an external notification endpoint.
+      PriceWatch does not collect, sell, or share your personal data. Everything the extension stores lives in your browser. Data only leaves your device if you explicitly enable optional features: GitHub Gist sync (sends your product list to your own GitHub account) or mobile push notifications (sends alert text to a webhook URL you configure). Both features are off by default.
     </div>
 
     <!-- 1. What data is stored -->
@@ -268,7 +268,7 @@
         <li><span class="data-label">Target price</span> The price threshold you set for notifications, if any.</li>
         <li><span class="data-label">Check interval</span> How frequently you have configured the extension to re-check the price (e.g., every hour, daily).</li>
       </ul>
-      <p>This data is stored exclusively in <code>chrome.storage.local</code> on your device. It is never transmitted to any server operated by PriceWatch or any third party, except as described in section 4 below regarding affiliate links and section 5 regarding optional push notifications.</p>
+      <p>This data is stored exclusively in <code>chrome.storage.local</code> on your device. It is never transmitted to any server operated by PriceWatch or any third party, except as described in section 4 below regarding optional GitHub Gist sync, section 5 regarding optional mobile push notifications, and section 6 regarding affiliate links.</p>
     </div>
 
     <!-- 2. Browsing data -->
@@ -281,43 +281,67 @@
     <!-- 3. Notifications -->
     <div class="policy-section" id="notifications">
       <h2>3. Notifications</h2>
-      <p>Price drop alerts are delivered through the Chrome Notifications API, which is handled entirely by your browser and operating system. No notification content is routed through an external server operated by PriceWatch.</p>
-      <p>In the extension settings, you have the option to configure a custom push URL (for example, a webhook to a service such as Pushover or IFTTT). If you choose to enable this optional feature, the extension will send a notification payload to the URL you specify. That communication occurs between your browser and the endpoint you configured — PriceWatch has no visibility into it and does not control the privacy practices of any third-party push service you choose to use.</p>
-      <p>If you do not configure a push URL, no external network requests are made for the purpose of notifications.</p>
+      <p>Price drop alerts, sell alerts, and back-in-stock alerts are delivered through the Chrome Notifications API, which is handled entirely by your browser and operating system. No notification content is routed through any server operated by PriceWatch.</p>
+      <p>For optional mobile push notifications via a third-party webhook, see section 5.</p>
     </div>
 
-    <!-- 4. Affiliate links -->
+    <!-- 4. GitHub Gist sync -->
+    <div class="policy-section" id="gist-sync">
+      <h2>4. Optional GitHub Gist sync</h2>
+      <p>PriceWatch includes an optional feature that syncs your product list to a private GitHub Gist. This allows companion tools (for example, a Termux script on Android) to read your tracked product list without manual file transfers.</p>
+      <p><strong>This feature is disabled by default.</strong> It is only active if you deliberately enter a GitHub personal access token in the extension settings.</p>
+      <p>When enabled, the following data is transmitted to the GitHub Gist API (<code>api.github.com</code>) on your behalf:</p>
+      <ul class="data-list">
+        <li><span class="data-label">Product URLs</span> The page addresses of products you are tracking.</li>
+        <li><span class="data-label">Product names</span> The titles of your tracked products.</li>
+        <li><span class="data-label">Target prices</span> Any price thresholds you have configured.</li>
+        <li><span class="data-label">Check interval</span> The polling frequency for each product.</li>
+        <li><span class="data-label">Currency</span> The currency configured for each product.</li>
+      </ul>
+      <p>This data is written to a <em>secret</em> (non-public) Gist in your GitHub account using the token you provide. PriceWatch does not operate any server, does not retain a copy of your token, and has no access to your Gist beyond what your browser performs directly via the GitHub API.</p>
+      <p>GitHub's own privacy policy governs data stored in Gists. You can revoke access at any time by removing the token in the extension settings or deleting the Gist from your GitHub account.</p>
+    </div>
+
+    <!-- 5. Mobile push notifications -->
+    <div class="policy-section" id="mobile-push">
+      <h2>5. Optional mobile push notifications</h2>
+      <p>In the extension settings you may configure a custom push URL (for example, a webhook to a service such as <a href="https://ntfy.sh" rel="noopener noreferrer">ntfy.sh</a>, Pushover, or IFTTT). <strong>This feature is disabled by default.</strong></p>
+      <p>If you enable it, the extension will send a notification payload — consisting of the alert title and message — to the URL you specify whenever a price event occurs. That request goes directly from your browser to the endpoint you configured. PriceWatch has no visibility into those requests and does not control the privacy practices of any third-party push service you choose to use.</p>
+      <p>No push requests are made if you have not configured a push URL.</p>
+    </div>
+
+    <!-- 6. Affiliate links -->
     <div class="policy-section" id="affiliate-links">
-      <h2>4. Affiliate links</h2>
-      <p>When you click a product link inside the PriceWatch popup or notification, the link may be routed through an affiliate network such as Amazon Associates or Skimlinks. This is a standard URL redirect that allows PriceWatch to earn a small commission if you complete a purchase — at no additional cost to you.</p>
-      <p>The affiliate redirect is a URL transformation only. No personal data about you (name, email address, browsing history, or device identifiers) is included in the redirect or shared with the affiliate network beyond what is inherent in any ordinary web request (IP address, browser user-agent string).</p>
-      <p>You can see the affiliate disclosure on every page of this site. If you prefer not to use affiliate links, you can navigate directly to the retailer's website instead of clicking through the extension.</p>
+      <h2>6. Affiliate links</h2>
+      <p>When you click a product link inside the PriceWatch popup, the link may include an Amazon Associates affiliate tag. This is a URL query parameter that allows PriceWatch to earn a small commission if you complete a purchase — at no additional cost to you.</p>
+      <p>The affiliate tag is a URL modification only. No personal data about you (name, email address, browsing history, or device identifiers) is included in the link or shared with Amazon beyond what is inherent in any ordinary web request (IP address, browser user-agent string). You may configure your own Amazon Associates tag in the extension settings, or leave the default publisher tag in place.</p>
+      <p>If you prefer not to use affiliate links, you can navigate directly to the retailer's website instead of clicking through the extension.</p>
     </div>
 
-    <!-- 5. No analytics or accounts -->
+    <!-- 7. No analytics or accounts -->
     <div class="policy-section" id="no-analytics">
-      <h2>5. No analytics, no tracking, no accounts</h2>
+      <h2>7. No analytics, no tracking, no accounts</h2>
       <p>PriceWatch does not include any analytics library (such as Google Analytics, Mixpanel, or similar). The extension does not phone home with usage statistics, error reports, or telemetry of any kind.</p>
       <p>There is no account system. You do not need to create a profile, log in, or provide an email address to use PriceWatch. Because there are no accounts, there is no user database and no credentials to be breached.</p>
       <p>No cookies or tracking pixels are set by PriceWatch or any service it communicates with.</p>
     </div>
 
-    <!-- 6. Data retention and deletion -->
+    <!-- 8. Data retention and deletion -->
     <div class="policy-section" id="data-retention">
-      <h2>6. Data retention and deletion</h2>
+      <h2>8. Data retention and deletion</h2>
       <p>Your tracked products and price history remain in <code>chrome.storage.local</code> until you delete them. You can remove individual products at any time from within the extension. Uninstalling the extension removes all associated storage from your browser.</p>
       <p>Because PriceWatch holds no data on any server, there is no remote data to request deletion of. All data is under your direct control.</p>
     </div>
 
-    <!-- 7. Changes to this policy -->
+    <!-- 9. Changes to this policy -->
     <div class="policy-section" id="changes">
-      <h2>7. Changes to this policy</h2>
+      <h2>9. Changes to this policy</h2>
       <p>If this privacy policy is updated in a material way, the "Last updated" date at the top of this page will be revised. Continued use of the extension after any update constitutes acceptance of the revised policy. If you disagree with a change, you can uninstall the extension at any time.</p>
     </div>
 
-    <!-- 8. Contact -->
+    <!-- 10. Contact -->
     <div class="policy-section" id="contact">
-      <h2>8. Contact</h2>
+      <h2>10. Contact</h2>
       <p>If you have questions about this privacy policy or how PriceWatch handles data, please open an issue on the project's repository or use the support link in the Chrome Web Store listing.</p>
     </div>
 
