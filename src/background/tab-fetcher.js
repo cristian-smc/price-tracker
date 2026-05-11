@@ -342,11 +342,11 @@ function tabExtractor({ tabId, userSelector, selectors }) {
     const afterComma = lastComma >= 0 ? s.length - lastComma - 1 : -1;
     let n;
     if (lastDot > lastComma) {
-      // dot is last separator: decimal if 0 or 2 digits follow, thousands if 3
-      n = (afterDot === 2 || afterDot === 0) ? s.replaceAll(',', '') : s.replaceAll('.', '').replaceAll(',', '');
+      // dot is last separator: thousands only if exactly 3 digits follow (e.g. 1.234)
+      n = (afterDot !== 3) ? s.replaceAll(',', '') : s.replaceAll('.', '').replaceAll(',', '');
     } else if (lastComma > lastDot) {
-      // comma is last separator: decimal if 0 or 2 digits follow, thousands if 3
-      n = (afterComma === 2 || afterComma === 0) ? s.replaceAll('.', '').replace(',', '.') : s.replaceAll(',', '').replaceAll('.', '');
+      // comma is last separator: thousands only if exactly 3 digits follow (e.g. 1,234)
+      n = (afterComma !== 3) ? s.replaceAll('.', '').replace(',', '.') : s.replaceAll(',', '').replaceAll('.', '');
     } else {
       n = s;
     }

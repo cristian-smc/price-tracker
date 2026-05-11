@@ -126,15 +126,15 @@ function detectDecimalSeparator(s) {
   const afterDot = lastDot >= 0 ? s.length - lastDot - 1 : -1;
   const afterComma = lastComma >= 0 ? s.length - lastComma - 1 : -1;
 
-  // Whichever separator comes last and has exactly 2 digits after it = decimal
+  // Separator is decimal unless exactly 3 digits follow it (thousands pattern)
   if (lastDot > lastComma) {
     // dot is last separator
-    if (afterDot === 2 || afterDot === 0) return 'dot';
-    return 'comma'; // dot is thousands separator (e.g. 1.299,99 reversed check)
+    if (afterDot !== 3) return 'dot';
+    return 'comma'; // dot is thousands separator (e.g. 1.299,99)
   }
   if (lastComma > lastDot) {
     // comma is last separator
-    if (afterComma === 2 || afterComma === 0) return 'comma';
+    if (afterComma !== 3) return 'comma';
     return 'dot';
   }
   // no separator at all → no decimal

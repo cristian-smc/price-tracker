@@ -106,8 +106,8 @@ function detectDecimalSeparator(s) {
   const lastComma = s.lastIndexOf(',');
   const afterDot   = lastDot   >= 0 ? s.length - lastDot   - 1 : -1;
   const afterComma = lastComma >= 0 ? s.length - lastComma - 1 : -1;
-  if (lastDot > lastComma)   return (afterDot   === 2 || afterDot   === 0) ? 'dot'   : 'comma';
-  if (lastComma > lastDot)   return (afterComma === 2 || afterComma === 0) ? 'comma' : 'dot';
+  if (lastDot > lastComma)   return afterDot   !== 3 ? 'dot'   : 'comma';
+  if (lastComma > lastDot)   return afterComma !== 3 ? 'comma' : 'dot';
   return 'dot';
 }
 
