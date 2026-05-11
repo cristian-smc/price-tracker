@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS = {
   sortBy: 'created',        // 'created' | 'name' | 'price' | 'drop'
   filterBy: 'all',          // 'all' | 'below_target' | 'out_of_stock'
   mobilePushUrl: '',        // ntfy.sh topic URL or any POST webhook
-  affiliateAmazonTag: 'cristiansmc-20', // Amazon Associates tag (e.g. "yourname-20")
+  affiliateAmazonTag: '',   // Amazon Associates tag (e.g. "yourname-20")
   affiliateSkimlinksId: '', // Skimlinks publisher ID (e.g. "123456X123456")
   gistToken: '',            // GitHub Personal Access Token (gist scope only)
   gistId: '',               // GitHub Gist ID — auto-populated after first sync

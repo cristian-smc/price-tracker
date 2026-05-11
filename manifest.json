@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PriceWatch",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "description": "Track prices on any website. Get notified when they drop. Never overpay again.",
   "homepage_url": "https://cristian-smc.github.io/price-tracker/",
   "permissions": [
