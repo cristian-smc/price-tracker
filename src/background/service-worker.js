@@ -57,6 +57,17 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
   chrome.notifications.clear(notificationId);
 });
 
+// "View product" button → opens the product page directly in a new tab.
+chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
+  if (buttonIndex !== 0) return;
+  const parts = notificationId.split('_');
+  if (parts.length >= 2) {
+    const p = await getProduct(parts[1]);
+    if (p?.url) chrome.tabs.create({ url: p.canonicalUrl ?? p.url });
+  }
+  chrome.notifications.clear(notificationId);
+});
+
 // ── Messages ──────────────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

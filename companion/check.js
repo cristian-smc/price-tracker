@@ -399,10 +399,13 @@ async function fetchHtml(url) {
 // ── Android notifications ─────────────────────────────────────────────────────
 
 function notify(notifId, title, body, openUrl) {
+  let hostname = '';
+  try { hostname = new URL(openUrl).hostname.replace(/^www\./, ''); } catch {}
+  const content = hostname ? `${body}\n${hostname}` : body;
   try {
     execFileSync('termux-notification', [
       '--title',   `PriceWatch: ${title}`,
-      '--content', body,
+      '--content', content,
       '--id',      notifId,
       '--priority', 'high',
       '--button1', 'Open',
@@ -410,7 +413,7 @@ function notify(notifId, title, body, openUrl) {
     ], { timeout: 8000 });
   } catch {
     // termux-notification not available (desktop testing) — just print
-    log(`  [NOTIFY] ${title}: ${body}`);
+    log(`  [NOTIFY] ${title}: ${content}`);
   }
 }
 

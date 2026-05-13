@@ -29,17 +29,20 @@ export async function maybeNotify(product, previousPrice, previousInStock = null
 
   const { title, message } = buildMessage(event, product);
   const notifId = `price_${product.id}_${now}`;
+  const hostname = hostnameFromUrl(product.canonicalUrl ?? product.url);
 
   await chrome.notifications.create(notifId, {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('assets/icons/icon-128.png'),
     title,
     message,
+    contextMessage: hostname,
     priority: 2,
+    buttons: [{ title: 'View product' }],
   });
 
   if (settings.soundEnabled) playSound();
-  if (settings.mobilePushUrl) await sendMobilePush(settings.mobilePushUrl, title, message);
+  if (settings.mobilePushUrl) await sendMobilePush(settings.mobilePushUrl, title, message, product.canonicalUrl ?? product.url, hostname);
 
   return notifId;
 }
@@ -81,22 +84,35 @@ function buildMessage(event, product) {
   return { title: `Sell alert: ${product.name}`, message: `Price rose to ${cur} — above your sell threshold of ${threshold}` };
 }
 
+function hostnameFromUrl(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ''); }
+  catch { return ''; }
+}
+
 function playSound() {
   chrome.runtime.sendMessage({ type: 'PLAY_SOUND' }).catch(() => {});
 }
 
-async function sendMobilePush(url, title, message) {
+async function sendMobilePush(url, title, message, productUrl, hostname) {
   try {
     const encoder = new TextEncoder();
     const encoded = encoder.encode(title);
     const base64 = btoa(String.fromCodePoint(...encoded));
     const rfc2047Title = `=?UTF-8?B?${base64}?=`;
 
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Title': rfc2047Title, 'Content-Type': 'text/plain; charset=utf-8' },
-      body: message,
-    });
+    const headers = {
+      'Title': rfc2047Title,
+      'Content-Type': 'text/plain; charset=utf-8',
+    };
+    // ntfy: Click header makes the whole notification tap-to-open;
+    // Actions adds a "View" button. Both are no-ops on generic webhooks.
+    if (productUrl) {
+      headers['Click']   = productUrl;
+      headers['Actions'] = `view, View product, ${productUrl}, clear=true`;
+    }
+    const body = hostname ? `${message}\n\n${hostname}` : message;
+
+    await fetch(url, { method: 'POST', headers, body });
   } catch {
     // network failure — push is best-effort, don't surface to user
   }
