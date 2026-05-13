@@ -290,13 +290,36 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   // ── Price extraction ──────────────────────────────────────────────────────
 
   function tryExtract() { // NOSONAR
-    const all = userSelector ? [userSelector, ...selectors] : selectors;
-    for (const sel of all) {
+    const CURR = /€|£|\$|¥|₹|₽|\blei\b|RON|EUR|GBP|USD|HUF|PLN|CHF|JPY|CNY|CAD|AUD|SEK|NOK|DKK|zł|Ft|kr/i;
+    // User selector is explicit — trust it. Heuristics are guesses and must validate.
+    if (userSelector) {
+      try {
+        const el = document.querySelector(userSelector);
+        if (el) {
+          const raw = (el.dataset?.price || el.getAttribute('content') || el.textContent || '').trim();
+          if (raw) return { raw, selectorUsed: userSelector };
+        }
+      } catch { /* fall through to heuristics */ }
+    }
+    for (const sel of selectors) {
       try {
         const el = document.querySelector(sel);
         if (!el) continue;
-        const raw = el.dataset?.price || el.getAttribute('content') || el.textContent;
-        if (raw?.trim()) return { raw: raw.trim(), selectorUsed: sel };
+        const text = (el.textContent || '').trim();
+        // Strong signal: the element's visible text has digits AND currency.
+        // Trust the text directly — attrs like data-price can be unrelated
+        // counters (e.g. Booking's totalPrice element with data-price="1").
+        if (/\d/.test(text) && CURR.test(text)) {
+          return { raw: text, selectorUsed: sel };
+        }
+        // Weak signal: no price text, but an attr might hold the price (e.g.
+        // <meta itemprop="price" content="19.99">). Validate parsed value to
+        // avoid placeholder attrs that are just "1" or "0".
+        const attrRaw = (el.dataset?.price || el.getAttribute('content') || '').trim();
+        if (attrRaw && /\d/.test(attrRaw)) {
+          const p = parseMinorUnits(attrRaw);
+          if (p && p > 100) return { raw: attrRaw, selectorUsed: sel };
+        }
       } catch { /* bad selector — skip */ }
     }
     return null;
@@ -359,10 +382,14 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   // search) that show many results — we want the best available deal, not just
   // the first or largest-font price. A minimum font size filters out footnotes.
   function tryExtractByText() { // NOSONAR
-    const numThenCurr = /(?:^|[\s(])(\d[\d\s.,]{0,9}\s*(?:€|lei|RON|EUR|GBP|[£$]))(?:[\s)]|$)/i;
-    const currThenNum = /(?:^|[\s(])([€£$]\s*\d[\d\s.,]{0,9})(?:[\s)]|$)/i;
+    // Number portion requires \d[\d\s.,]*\d — at least 2 digits — to reject
+    // placeholder text like "RON 1" or "$1" while still matching real prices
+    // ("12 EUR", "$19.99", "RON 1,699"). One-digit prices are virtually never
+    // real on the e-commerce / travel sites this extension targets.
+    const numThenCurr = /(?:^|[\s(])(\d[\d\s.,]{0,9}\d\s*(?:€|lei|RON|EUR|GBP|[£$]))(?:[\s)]|$)/i;
+    const currThenNum = /(?:^|[\s(])([€£$]\s*\d[\d\s.,]{0,9}\d)(?:[\s)]|$)/i;
     // Handles "RON 1,234" / "EUR 1.234" style (text code before number — common on Google Flights)
-    const codeThenNum = /(?:^|[\s(])((?:RON|EUR|GBP|HUF|PLN|CHF|USD|lei)\s+\d[\d\s.,]{0,9})(?:[\s)]|$)/i;
+    const codeThenNum = /(?:^|[\s(])((?:RON|EUR|GBP|HUF|PLN|CHF|USD|lei)\s+\d[\d\s.,]{0,9}\d)(?:[\s)]|$)/i;
     const MIN_FONT_PX = 12;
     let lowestPrice = null;
     let lowestRaw   = null;
