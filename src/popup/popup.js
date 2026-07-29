@@ -187,7 +187,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 // ── Header buttons ────────────────────────────────────────────────────────
 
-document.getElementById('btn-add')?.addEventListener('click', showAdd);
+document.getElementById('btn-add')?.addEventListener('click', () => showAdd());
 document.getElementById('btn-settings')?.addEventListener('click', () => {
   chrome.runtime.openOptionsPage();
 });

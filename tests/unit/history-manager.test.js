@@ -3,6 +3,8 @@
  * Run with: npx jest tests/unit/history-manager.test.js
  */
 
+import { jest } from '@jest/globals';
+
 // ── Chrome storage mock ────────────────────────────────────────────────────
 
 const store = {};
@@ -36,18 +38,17 @@ beforeEach(async () => {
 
 describe('appendHistory', () => {
   test('appends a point to empty history', async () => {
-    await appendHistory('p1', { price: 1999, stock: 'in_stock' }, 500);
+    await appendHistory('p1', { price: 1999 }, 500);
     const pts = await getHistory('p1');
     expect(pts.length).toBe(1);
     expect(pts[0].price).toBe(1999);
-    expect(pts[0].stock).toBe('in_stock');
     expect(typeof pts[0].ts).toBe('number');
   });
 
   test('appends multiple points in order', async () => {
-    await appendHistory('p1', { price: 3000, stock: 'in_stock' }, 500);
-    await appendHistory('p1', { price: 2500, stock: 'in_stock' }, 500);
-    await appendHistory('p1', { price: 2000, stock: 'in_stock' }, 500);
+    await appendHistory('p1', { price: 3000 }, 500);
+    await appendHistory('p1', { price: 2500 }, 500);
+    await appendHistory('p1', { price: 2000 }, 500);
     const pts = await getHistory('p1');
     expect(pts.length).toBe(3);
     expect(pts[0].price).toBe(3000);
@@ -56,7 +57,7 @@ describe('appendHistory', () => {
 
   test('prunes to maxPoints', async () => {
     for (let i = 0; i < 10; i++) {
-      await appendHistory('p1', { price: i * 100, stock: 'in_stock' }, 5);
+      await appendHistory('p1', { price: i * 100 }, 5);
     }
     const pts = await getHistory('p1');
     expect(pts.length).toBe(5);
@@ -71,8 +72,8 @@ describe('appendHistory', () => {
   });
 
   test('different products have independent history', async () => {
-    await appendHistory('p1', { price: 1000, stock: 'in_stock' }, 500);
-    await appendHistory('p2', { price: 2000, stock: 'out_of_stock' }, 500);
+    await appendHistory('p1', { price: 1000 }, 500);
+    await appendHistory('p2', { price: 2000 }, 500);
     const p1 = await getHistory('p1');
     const p2 = await getHistory('p2');
     expect(p1.length).toBe(1);

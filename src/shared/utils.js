@@ -84,6 +84,30 @@ export function productIdFromAlarm(name) {
   return name.startsWith(ALARM_PREFIX) ? name.slice(ALARM_PREFIX.length) : null;
 }
 
+// ---------- Product status helpers ----------
+
+/**
+ * Whether stock status should block a price alert for this product.
+ * When checkStockEnabled is false, stock is ignored entirely (per the UI copy:
+ * "When disabled, price alerts trigger regardless of stock status").
+ * @param {import('./types.js').Product} product
+ * @returns {boolean}
+ */
+export function isStockEligible(product) {
+  return product.checkStockEnabled === false || product.inStock !== false;
+}
+
+/**
+ * Whether a product currently qualifies as "below target", consistent with
+ * the stock-aware eligibility notifier.js uses for price-drop alerts.
+ * @param {import('./types.js').Product} product
+ * @returns {boolean}
+ */
+export function isBelowTarget(product) {
+  return product.currentPrice !== null && product.targetPrice !== null &&
+    product.currentPrice < product.targetPrice && isStockEligible(product);
+}
+
 // ---------- Time helpers ----------
 
 /**

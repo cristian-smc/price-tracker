@@ -10,6 +10,7 @@ import { getProducts, getProduct, saveProduct, deleteProduct, getHistory, getSet
 import { generateId, productIdFromAlarm } from '../shared/utils.js';
 import { MSG, DEFAULT_SETTINGS, ALARM_DIGEST } from '../shared/constants.js';
 import { syncToGist } from './gist-sync.js';
+import { productIdFromNotification } from './notifier.js';
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -34,17 +35,22 @@ chrome.runtime.onStartup.addListener(async () => {
 // ── Alarms ────────────────────────────────────────────────────────────────────
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === ALARM_DIGEST) { await fireDigest(); return; }
-  const productId = productIdFromAlarm(alarm.name);
-  if (productId) await checkProduct(productId);
+  try {
+    if (alarm.name === ALARM_DIGEST) { await fireDigest(); return; }
+    const productId = productIdFromAlarm(alarm.name);
+    if (productId) await checkProduct(productId);
+  } catch (err) {
+    // Prevent an unhandled rejection from silently swallowing this cycle
+    // (e.g. a chrome.storage.sync quota error) — the next alarm still fires.
+    console.error(`[PriceWatch] alarm handler failed for ${alarm.name}:`, err);
+  }
 });
 
 // ── Notification clicks ───────────────────────────────────────────────────────
 
 chrome.notifications.onClicked.addListener(async (notificationId) => {
-  const parts = notificationId.split('_');
-  if (parts.length >= 2) {
-    const productId = parts[1];
+  const productId = productIdFromNotification(notificationId);
+  if (productId) {
     // Store the target product ID so the popup can open directly to its detail view
     await chrome.storage.local.set({ _notifClick: productId });
     await chrome.action.openPopup().catch(() => {
@@ -60,9 +66,9 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
 // "View product" button → opens the product page directly in a new tab.
 chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
   if (buttonIndex !== 0) return;
-  const parts = notificationId.split('_');
-  if (parts.length >= 2) {
-    const p = await getProduct(parts[1]);
+  const productId = productIdFromNotification(notificationId);
+  if (productId) {
+    const p = await getProduct(productId);
     if (p?.url) chrome.tabs.create({ url: p.canonicalUrl ?? p.url });
   }
   chrome.notifications.clear(notificationId);

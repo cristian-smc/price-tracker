@@ -14,18 +14,27 @@ const OFFSCREEN_URL = chrome.runtime.getURL('src/offscreen/offscreen.html');
 const OFFSCREEN_REASON = 'DOM_PARSER';
 
 let offscreenReady = false;
+// Caches the in-flight creation promise so concurrent callers (multiple alarms
+// firing near-simultaneously) await the same createDocument() call instead of
+// each racing to create one — only a single offscreen document is allowed.
+let offscreenCreating = null;
 
 async function ensureOffscreen() {
   if (offscreenReady) return;
-  const existing = await chrome.offscreen.hasDocument?.() ?? false;
-  if (!existing) {
-    await chrome.offscreen.createDocument({
-      url: OFFSCREEN_URL,
-      reasons: [OFFSCREEN_REASON],
-      justification: 'Parse product page HTML with DOMParser to extract prices',
-    });
+  if (!offscreenCreating) {
+    offscreenCreating = (async () => {
+      const existing = await chrome.offscreen.hasDocument?.() ?? false;
+      if (!existing) {
+        await chrome.offscreen.createDocument({
+          url: OFFSCREEN_URL,
+          reasons: [OFFSCREEN_REASON],
+          justification: 'Parse product page HTML with DOMParser to extract prices',
+        });
+      }
+      offscreenReady = true;
+    })().finally(() => { offscreenCreating = null; });
   }
-  offscreenReady = true;
+  await offscreenCreating;
 }
 
 async function parseWithOffscreen(html, url, userSelector) {
@@ -53,10 +62,12 @@ function looksLikeSpa(html) {
  */
 async function fetchWithRotation(url) {
   let lastStatus = 0;
+  let lastNetworkError = null;
 
   for (const ua of USER_AGENTS) {
+    let resp;
     try {
-      const resp = await fetch(url, {
+      resp = await fetch(url, {
         headers: {
           'User-Agent': ua,
           'Accept': 'text/html,application/xhtml+xml',
@@ -64,23 +75,26 @@ async function fetchWithRotation(url) {
         },
         signal: AbortSignal.timeout(15_000),
       });
-
-      lastStatus = resp.status;
-
-      if (resp.status === 403 || resp.status === 429) continue; // try next UA
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-      const html = await resp.text();
-      // Detect canonical URL from redirect chain (fetch follows redirects)
-      const finalUrl = resp.url === url ? null : resp.url;
-      return { html, finalUrl };
     } catch (err) {
-      if (err.message?.startsWith('HTTP')) continue;
-      throw err;
+      lastNetworkError = err; // network/timeout error — try next UA
+      continue;
     }
+
+    lastStatus = resp.status;
+    if (resp.status === 403 || resp.status === 429) continue; // try next UA
+
+    // A definitive non-UA-related status (404, 500, ...) — fail fast with the
+    // real reason instead of cycling through the remaining UAs.
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const html = await resp.text();
+    // Detect canonical URL from redirect chain (fetch follows redirects)
+    const finalUrl = resp.url === url ? null : resp.url;
+    return { html, finalUrl };
   }
 
-  throw new Error(`HTTP ${lastStatus} — all User-Agents blocked`);
+  if (lastStatus) throw new Error(`HTTP ${lastStatus} — all User-Agents blocked`);
+  throw lastNetworkError ?? new Error('Network error — all User-Agents failed');
 }
 
 export async function fetchAndExtract(product) {
@@ -122,4 +136,5 @@ export async function fetchAndExtract(product) {
 
 export function resetOffscreenState() {
   offscreenReady = false;
+  offscreenCreating = null;
 }

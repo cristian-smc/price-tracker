@@ -125,7 +125,7 @@ describe('parsePrice', () => {
 
 describe('formatPrice', () => {
   test('formats USD cents', () => {
-    expect(formatPrice(129999, 'USD', 'en-US')).toBe('$1,300.00'); // Intl rounding
+    expect(formatPrice(129999, 'USD', 'en-US')).toBe('$1,299.99');
   });
 
   test('formats JPY (zero-decimal)', () => {
@@ -135,7 +135,7 @@ describe('formatPrice', () => {
   test('formats EUR', () => {
     // en-US locale formats EUR differently than de-DE — just check it contains "1,299"
     const result = formatPrice(129999, 'EUR', 'en-US');
-    expect(result).toContain('1,300'); // 129999 / 100 = 1299.99, rounds to 1,300.00
+    expect(result).toContain('1,299.99');
   });
 
   test('formats GBP', () => {

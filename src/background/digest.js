@@ -5,6 +5,7 @@
 import { getProducts, getSettings } from '../shared/storage.js';
 import { formatPrice } from '../shared/currency.js';
 import { ALARM_DIGEST, STORAGE_KEYS } from '../shared/constants.js';
+import { isBelowTarget } from '../shared/utils.js';
 
 /** Schedule (or reschedule) the daily digest alarm based on current settings. */
 export async function syncDigestAlarm() {
@@ -33,7 +34,7 @@ export async function fireDigest() {
   const products = await getProducts();
   const entries = Object.values(products).filter((p) => p.enabled);
 
-  const drops  = entries.filter((p) => p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice);
+  const drops  = entries.filter(isBelowTarget);
   const errors = entries.filter((p) => p.consecutiveErrors >= 3);
 
   if (drops.length === 0 && errors.length === 0) return;

@@ -28,6 +28,8 @@ export async function maybeNotify(product, previousPrice, previousInStock = null
   }
 
   const { title, message } = buildMessage(event, product);
+  // Product IDs may themselves contain '_' (see generateId's alphabet), so the
+  // timestamp is appended after the LAST '_' and parsed back with lastIndexOf.
   const notifId = `price_${product.id}_${now}`;
   const hostname = hostnameFromUrl(product.canonicalUrl ?? product.url);
 
@@ -82,6 +84,21 @@ function buildMessage(event, product) {
   }
   const threshold = formatPrice(product.sellThreshold, product.currency ?? 'USD');
   return { title: `Sell alert: ${product.name}`, message: `Price rose to ${cur} — above your sell threshold of ${threshold}` };
+}
+
+/**
+ * Extract the product ID from a notification ID built by maybeNotify().
+ * Product IDs may contain '_', so this splits on the LAST '_' (the timestamp
+ * separator) rather than the first, and strips the fixed 'price_' prefix.
+ * @param {string} notificationId
+ * @returns {string|null}
+ */
+export function productIdFromNotification(notificationId) {
+  if (!notificationId?.startsWith('price_')) return null;
+  const withoutPrefix = notificationId.slice('price_'.length);
+  const lastUnderscore = withoutPrefix.lastIndexOf('_');
+  if (lastUnderscore < 0) return null;
+  return withoutPrefix.slice(0, lastUnderscore);
 }
 
 function hostnameFromUrl(url) {

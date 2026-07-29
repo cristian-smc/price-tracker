@@ -9,10 +9,17 @@
 // Re-implement the extraction logic in a testable, environment-independent form
 // by importing the helpers directly via a thin test harness below.
 
-import { HEURISTIC_SELECTORS, STOCK_SELECTORS, STOCK_STATUS } from '../../src/shared/constants.js';
+import { HEURISTIC_SELECTORS } from '../../src/shared/constants.js';
 import { parsePrice } from '../../src/shared/currency.js';
 
 // ── Inline the extraction helpers (mirrors offscreen.js logic) ──────────────
+// offscreen.js only runs inside the offscreen document (wired to
+// chrome.runtime.onMessage) and doesn't export these as pure functions, so
+// this suite exercises a local mirror. STOCK_STATUS/STOCK_SELECTORS below are
+// test-only fixtures — production stock detection (offscreen.js extractStock)
+// returns a plain boolean|null, not this enum.
+const STOCK_STATUS = { IN_STOCK: 'in_stock', OUT_OF_STOCK: 'out_of_stock', UNKNOWN: 'unknown' };
+const STOCK_SELECTORS = ['#add-to-cart-button', '.add-to-cart', '[data-testid="add-to-cart"]'];
 
 function parseDoc(html) {
   return new DOMParser().parseFromString(html, 'text/html');

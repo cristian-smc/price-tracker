@@ -135,10 +135,18 @@ function parsePriceStr(str) {
       return a || b;
     }
   }
-  str = str.replace(/^[a-z\s]+(?=[€£¥₩₹₺₽₴₪฿₱$]|\d)/i, '');
-  str = str.replace(/(?<=\d)\s+[a-z]{4,}[a-z\s]*$/i, '');
   str = str.trim();
-  const { currency, remainder } = extractCurrency(str);
+
+  // Detect the currency symbol/code before stripping filler words, so that a
+  // leading ISO code (e.g. "EUR 19.99") isn't consumed by the filler-word strip.
+  const { currency, remainder: afterCurrency } = extractCurrency(str);
+
+  // Strip leading non-price words ("from", "Sale", "Was:", "Only", etc.)
+  let remainder = afterCurrency.replace(/^[a-z\s]+(?=\d)/i, '');
+  // Strip trailing non-price words (but not currency codes like "Lei", "RON")
+  remainder = remainder.replace(/(?<=\d)\s+[a-z]{4,}[a-z\s]*$/i, '');
+  remainder = remainder.trim();
+
   const numMatch = /[\d\s,.]+/.exec(remainder);
   if (!numMatch) return null;
   const value = toMinorUnits(numMatch[0].trim(), currency);

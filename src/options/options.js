@@ -36,6 +36,15 @@ document.getElementById('btn-request-notif').addEventListener('click', async () 
   updateNotifStatus();
 });
 
+// ── Rate us ────────────────────────────────────────────────────────────────
+// Built from the extension's own runtime ID rather than a hardcoded store
+// URL — chrome.runtime.id is the published Chrome Web Store item ID once
+// installed from the store, so this stays correct without maintenance.
+
+document.getElementById('btn-rate').addEventListener('click', () => {
+  chrome.tabs.create({ url: `https://chromewebstore.google.com/detail/${chrome.runtime.id}/reviews` });
+});
+
 // ── Load settings ─────────────────────────────────────────────────────────
 
 async function loadSettings() {

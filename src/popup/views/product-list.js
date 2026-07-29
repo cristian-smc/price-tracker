@@ -115,6 +115,8 @@ export function renderProductList(products, {
   list.className = 'product-list';
   wrap.appendChild(list);
 
+  wrap.appendChild(makeRateLink());
+
   // Reactive render on search/sort/filter changes
   const renderList = () => {
     list.innerHTML = '';
@@ -283,6 +285,20 @@ function buildCard(p, onSelect, onReorder) {
   });
 
   return card;
+}
+
+function makeRateLink() {
+  const footer = document.createElement('div');
+  footer.className = 'rate-link';
+  const link = document.createElement('a');
+  link.href = '#';
+  link.textContent = '★ Enjoying PriceWatch? Rate us';
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.tabs.create({ url: `https://chromewebstore.google.com/detail/${chrome.runtime.id}/reviews` });
+  });
+  footer.appendChild(link);
+  return footer;
 }
 
 function makeThumbnailPlaceholder() {

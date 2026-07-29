@@ -66,6 +66,12 @@ h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
 .field-hint { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 .field-hint a { color: var(--accent); }
 
+.rate-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.rate-row span { font-size: 13px; }
+
 .toggle-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 6px 0;

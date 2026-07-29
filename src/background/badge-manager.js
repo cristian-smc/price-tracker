@@ -4,12 +4,11 @@
  */
 
 import { getProducts } from '../shared/storage.js';
+import { isBelowTarget } from '../shared/utils.js';
 
 export async function updateBadge() {
   const products = await getProducts();
-  const count = Object.values(products).filter(
-    (p) => p.enabled && p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice && p.inStock !== false
-  ).length;
+  const count = Object.values(products).filter((p) => p.enabled && isBelowTarget(p)).length;
 
   if (count > 0) {
     await chrome.action.setBadgeText({ text: String(count) });
