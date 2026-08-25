@@ -3,7 +3,98 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PriceWatch — Track prices. Get notified. Never overpay.</title>
+  <title>PriceWatch — Free Price Tracker & Price Drop Alerts for Chrome</title>
+  <meta name="description" content="PriceWatch is a free Chrome extension that tracks prices on Amazon, Walmart, Best Buy, eBay, and thousands of other stores, then alerts you the moment a price drops. No account, no server — your data stays in your browser.">
+  <link rel="canonical" href="https://cristian-smc.github.io/price-tracker/">
+  <link rel="icon" type="image/png" href="../assets/icons/icon-32.png">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="PriceWatch — Free Price Tracker & Price Drop Alerts for Chrome">
+  <meta property="og:description" content="Track prices on Amazon, Walmart, Best Buy, eBay, and thousands of other stores. Get a Chrome notification the moment a price drops. No account required.">
+  <meta property="og:url" content="https://cristian-smc.github.io/price-tracker/">
+  <meta property="og:site_name" content="PriceWatch">
+  <meta property="og:image" content="https://cristian-smc.github.io/price-tracker/store-screenshots/product-list-real-1280x800.png">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="PriceWatch — Free Price Tracker & Price Drop Alerts for Chrome">
+  <meta name="twitter:description" content="Track prices on Amazon, Walmart, Best Buy, eBay, and thousands of other stores. Get notified the moment a price drops.">
+  <meta name="twitter:image" content="https://cristian-smc.github.io/price-tracker/store-screenshots/product-list-real-1280x800.png">
+
+  <!-- Structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "PriceWatch",
+    "applicationCategory": "BrowserApplication",
+    "operatingSystem": "Chrome",
+    "description": "PriceWatch is a free Chrome extension that tracks product prices on any e-commerce site and sends a notification the moment the price drops below your target.",
+    "url": "https://cristian-smc.github.io/price-tracker/",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Is PriceWatch free?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. PriceWatch is completely free to install and use, with no account, subscription, or paywalled features."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does PriceWatch work on Amazon?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Amazon is one of the most common sites PriceWatch is used on, alongside Walmart, Best Buy, eBay, Target, and thousands of other e-commerce sites."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How is PriceWatch different from CamelCamelCamel or Keepa?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "PriceWatch works across any online store, not just Amazon, and runs entirely inside your browser — there's no website to visit, no account to create, and no data sent to an external server."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How often does PriceWatch check prices?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "You choose the interval — every 5, 15, or 30 minutes, hourly, or daily — and PriceWatch checks automatically in the background using Chrome's alarm scheduler, even when the browser tab isn't open."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does PriceWatch collect or sell my data?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. PriceWatch has no analytics, no tracking, and no server. All tracked products and price history stay in the browser's local storage."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can I track the same product across multiple stores?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Add the same product from several retailers and PriceWatch will always highlight whichever in-stock source currently has the lowest price."
+        }
+      }
+    ]
+  }
+  </script>
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -252,6 +343,72 @@
       font-size: 0.93rem;
     }
 
+    /* ── Stores ── */
+    .stores {
+      background: var(--surface);
+    }
+
+    .store-chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .store-chip {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.5rem 1.1rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--navy);
+    }
+
+    /* ── FAQ ── */
+    .faq-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .faq-item {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.25rem 1.5rem;
+    }
+
+    .faq-item summary {
+      cursor: pointer;
+      padding: 1.15rem 0;
+      font-weight: 700;
+      color: var(--navy);
+      list-style: none;
+    }
+
+    .faq-item summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .faq-item summary::after {
+      content: "+";
+      float: right;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .faq-item[open] summary::after {
+      content: "\2212";
+    }
+
+    .faq-item p {
+      color: var(--muted);
+      font-size: 0.93rem;
+      padding-bottom: 1.15rem;
+      margin-top: -0.5rem;
+    }
+
     /* ── CTA ── */
     .cta {
       background: var(--navy);
@@ -337,6 +494,7 @@
     <ul class="nav-links">
       <li><a href="#features">Features</a></li>
       <li><a href="#how-it-works">How it works</a></li>
+      <li><a href="#faq">FAQ</a></li>
       <li><a href="privacy.html">Privacy Policy</a></li>
     </ul>
   </nav>
@@ -452,6 +610,61 @@
             <p>When the price falls to or below your target, Chrome delivers a notification. Click it to go straight to the product page.</p>
           </div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Supported stores -->
+  <section class="section stores" id="stores">
+    <div class="section-inner">
+      <p class="section-label">Supported stores</p>
+      <h2>Works on Amazon and thousands of other stores</h2>
+      <p class="section-intro">PriceWatch isn't limited to a fixed retailer list. It reads structured product data (JSON-LD, Open&nbsp;Graph tags) and common price selectors, so it works on almost any online store — plus you can pick a custom price element manually if a site needs it.</p>
+      <div class="store-chip-list">
+        <span class="store-chip">Amazon</span>
+        <span class="store-chip">Walmart</span>
+        <span class="store-chip">Best Buy</span>
+        <span class="store-chip">eBay</span>
+        <span class="store-chip">Target</span>
+        <span class="store-chip">Newegg</span>
+        <span class="store-chip">Etsy</span>
+        <span class="store-chip">Shopify stores</span>
+        <span class="store-chip">WooCommerce stores</span>
+        <span class="store-chip">+ thousands more</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section" id="faq">
+    <div class="section-inner">
+      <p class="section-label">FAQ</p>
+      <h2>Frequently asked questions</h2>
+      <div class="faq-list">
+        <details class="faq-item">
+          <summary>Is PriceWatch free?</summary>
+          <p>Yes. PriceWatch is completely free to install and use, with no account, subscription, or paywalled features.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Does PriceWatch work on Amazon?</summary>
+          <p>Yes. Amazon is one of the most common sites PriceWatch is used on, alongside Walmart, Best Buy, eBay, Target, and thousands of other e-commerce sites.</p>
+        </details>
+        <details class="faq-item">
+          <summary>How is PriceWatch different from CamelCamelCamel or Keepa?</summary>
+          <p>PriceWatch works across any online store, not just Amazon, and runs entirely inside your browser — there's no website to visit, no account to create, and no data sent to an external server.</p>
+        </details>
+        <details class="faq-item">
+          <summary>How often does PriceWatch check prices?</summary>
+          <p>You choose the interval — every 5, 15, or 30 minutes, hourly, or daily — and PriceWatch checks automatically in the background using Chrome's alarm scheduler, even when the browser tab isn't open.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Does PriceWatch collect or sell my data?</summary>
+          <p>No. PriceWatch has no analytics, no tracking, and no server. All tracked products and price history stay in your browser's local storage. See the <a href="privacy.html">privacy policy</a> for details.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Can I track the same product across multiple stores?</summary>
+          <p>Yes. Add the same product from several retailers and PriceWatch will always highlight whichever in-stock source currently has the lowest price.</p>
+        </details>
       </div>
     </div>
   </section>

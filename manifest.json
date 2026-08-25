@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PriceWatch",
-  "version": "2.3.4",
-  "description": "Track prices on any website. Get notified when they drop. Never overpay again.",
+  "version": "2.3.5",
+  "description": "Free price tracker for Amazon, Walmart, Best Buy, eBay & more. Get notified the moment a price drops. No account, 100% private.",
   "homepage_url": "https://cristian-smc.github.io/price-tracker/",
   "permissions": [
     "alarms",

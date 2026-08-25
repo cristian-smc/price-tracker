@@ -2,6 +2,8 @@
 
 Track prices on any website. Get notified when they drop. Never overpay again.
 
+🔗 [Landing page](https://cristian-smc.github.io/price-tracker/) · [Privacy policy](https://cristian-smc.github.io/price-tracker/privacy.html)
+
 ## Features
 
 - **Track any product** — works on any e-commerce site (Amazon, eBay, Best Buy, Walmart, and more)
@@ -80,6 +82,10 @@ PriceWatch does not collect or transmit any personal data. All product data is s
 `Alt+P` — open the PriceWatch popup (configurable via `chrome://extensions/shortcuts`).
 
 ## Changelog
+
+### 2.3.5
+- **SEO/store listing** — keyword-rich manifest description, landing page meta tags (Open Graph, Twitter Card, JSON-LD structured data), FAQ + supported-stores sections, `robots.txt`/`sitemap.xml`
+- No functional changes
 
 ### 2.3.0
 - **Stock awareness** — each source now shows an in-stock or out-of-stock badge in the product detail view
