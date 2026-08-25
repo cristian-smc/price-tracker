@@ -4,15 +4,12 @@ Paste these into the Developer Dashboard → Store listing. Not read from the re
 
 ## Title (max 75 characters)
 
-Current: `PriceWatch`
+**Decided:** `PriceWatch – Price Tracker & Drop Alerts` (42) — now set in `manifest.json`.
 
-Options (pick one, character count included):
+Other options considered:
 
-- `PriceWatch – Price Tracker & Drop Alerts` (42)
 - `PriceWatch: Price Tracker & Alerts` (35)
 - `PriceWatch – Amazon Price Tracker & Alerts` (43)
-
-Recommend the first — keeps brand first (existing users search "PriceWatch" by name), adds the two phrases people actually type into the Web Store search box ("price tracker", "drop alerts").
 
 ## Summary / short description (max 132 characters)
 
