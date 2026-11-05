@@ -327,6 +327,24 @@ describe('checkProduct', () => {
     expect(updated.currentPrice).toBe(7000); // unchanged
   });
 
+  test('self-repairs stale selector with a bounded rediscovery attempt',async()=>{
+    await saveProduct(makeProduct({selectors:{price:'.old-selector'}}));
+    fetchAndExtract.mockResolvedValueOnce(makeFetchResult())
+      .mockResolvedValueOnce(makeFetchResult({price:6500,currency:'USD',strategy:4,selectorUsed:'.replacement-price'}));
+    await checkProduct('test-product-1');
+    expect(fetchAndExtract).toHaveBeenCalledTimes(2);
+    expect(fetchAndExtract.mock.calls[1][0].selectors.price).toBeNull();
+    const updated=await getProduct('test-product-1');
+    expect(updated.sources[0].selectors.price).toBe('.replacement-price');
+    expect(updated.currentPrice).toBe(6500);expect(updated.checkStatus).toBe('ok');
+  });
+  test('fallback result replaces stale selector without another network fetch',async()=>{
+    await saveProduct(makeProduct({selectors:{price:'.old-selector'}}));
+    fetchAndExtract.mockResolvedValueOnce(makeFetchResult({price:6500,currency:'USD',strategy:4,selectorUsed:'.new-price'}));
+    await checkProduct('test-product-1');
+    expect(fetchAndExtract).toHaveBeenCalledTimes(1);expect((await getProduct('test-product-1')).sources[0].selectors.price).toBe('.new-price');
+  });
+
   test('clears selector after DRIFT_STRIKE_LIMIT consecutive nulls', async () => {
     const product = makeProduct({ selectors: { price: '.old-selector' }, consecutiveNulls: 2 });
     await saveProduct(product);

@@ -65,6 +65,13 @@ test('list bulk action recovers controls after failure', async () => {
   expect(button(view, 'Check all').disabled).toBe(false);
   expect(view.querySelector('[role="alert"]').textContent).toContain('Quota exceeded');
 });
+test('card metadata spans beneath the picture and name-price area', () => {
+  const view=renderProductList({p1:p},{});
+  const open=view.querySelector('.card-open');
+  expect(open.querySelector('.card-body .row2')).toBeNull();
+  expect(open.querySelector(':scope > .row2')).not.toBeNull();
+});
+
 test('card delete confirms and never opens product details', async () => {
   const onSelect = jest.fn(); const onDelete = jest.fn(async () => {});
   global.confirm = jest.fn(() => false);
@@ -110,14 +117,27 @@ test('groups and tags participate in search and filtering',()=>{
   const group=view.querySelector('[aria-label="Filter by group"]'); group.value='Home'; group.dispatchEvent(new Event('change'));
   expect(view.querySelectorAll('.product-card')).toHaveLength(1); expect(view.querySelector('.product-card').dataset.id).toBe('p2');
 });
+test('other-store link opens Google Shopping while retaining manual source input',()=>{
+  const view=renderProductDetail({product:p,history:[],settings:{}});
+  const link=view.querySelector('a.find-stores');
+  expect(link.target).toBe('_blank');
+  expect(link.rel).toContain('noopener');
+  expect(new URL(link.href).hostname).toBe('www.google.com');
+  expect(new URL(link.href).searchParams.get('tbm')).toBe('shop');
+  expect(new URL(link.href).searchParams.get('q')).toBe(p.name);
+  expect(view.querySelector('.add-source-input')).not.toBeNull();
+});
+
 test('older history remains visible without being silently discarded',()=>{
   const view=renderProductDetail({product:p,history:[{ts:100,price:15000},{ts:200,price:14000}],settings:{}});
-  expect(view.textContent).toContain('Earlier history is shown as recorded');
+  expect(view.textContent).not.toContain('Earlier history');
+  expect(view.querySelectorAll('.sparkline-container')).toHaveLength(1);
   expect(view.querySelector('.sparkline-container svg')).not.toBeNull();
 });
-test('source rows label foreign currencies as not compared and expose repair',()=>{
+test('source rows preserve currency warnings without manual repair controls',()=>{
   const view=renderProductDetail({product:{...p,referenceCurrency:'JPY',sources:[{id:'one',url:p.url,currency:'JPY',currentPrice:14000},{id:'two',url:'https://other.example',currency:'USD',currentPrice:100}]},history:[],settings:{},onRepair:()=>{}});
-  expect(view.textContent).toContain('USD · Not compared'); expect(view.querySelectorAll('.source-repair')).toHaveLength(2);
+  expect(view.textContent).toContain('USD · Not compared'); expect(view.querySelectorAll('.source-repair')).toHaveLength(0);
+  expect(view.textContent).not.toContain('Repair price selector');
 });
 
 test('detail check recovers controls and announces error', async () => {

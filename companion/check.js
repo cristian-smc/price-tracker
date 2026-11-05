@@ -213,8 +213,14 @@ function trySelectorCheerio($, selector) {
     if (!el.length) return null;
     const raw = el.attr('data-price') || el.attr('content') || el.text();
     if (!raw) return null;
+    const localText = el.text() + ' ' + el.parent().contents().map((_index, node) => $(node).text()).get().join(' ');
+    const surroundingCurrency = /\b(?:RON|lei)\b/i.test(localText) ? 'RON'
+      : /€|\bEUR\b/i.test(localText) ? 'EUR'
+      : /£|\bGBP\b/i.test(localText) ? 'GBP'
+      : /¥|\bJPY\b/i.test(localText) ? 'JPY'
+      : /₩|\bKRW\b/i.test(localText) ? 'KRW' : null;
     const hint = $('[itemprop="priceCurrency"]').first().attr('content') ||
-      $('[itemprop="priceCurrency"]').first().text() || $('meta[property="product:price:currency"]').attr('content');
+      $('[itemprop="priceCurrency"]').first().text() || $('meta[property="product:price:currency"]').attr('content') || surroundingCurrency;
     const parsed = parsePrice(raw.trim(), hint);
     if (!parsed) return null;
     return { price: parsed.value, currency: parsed.currency };

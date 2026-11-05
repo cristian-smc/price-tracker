@@ -8,7 +8,6 @@ import { sendMessage as send } from '../shared/messages.js';
 import { renderProductList } from './views/product-list.js';
 import { renderAddProduct } from './views/add-product.js';
 import { renderProductDetail } from './views/product-detail.js';
-import { renderOtherStores } from './views/other-stores.js';
 
 const container = document.getElementById('view-container');
 const notifBanner = document.getElementById('notif-banner');
@@ -159,7 +158,6 @@ async function showDetail(productId) {
     settings: settings ?? {},
     onBack: () => navigate(showList),
     onEdit: (id) => showEdit(products[id]),
-    onDiscover: (id) => navigate(() => showOtherStores(id)),
     onDelete: (id) => deleteFromView(id, version),
     onRepair: startRepair,
     onCheckNow: async (id) => {
@@ -185,20 +183,6 @@ async function showDetail(productId) {
       await send({ type: MSG.REMOVE_SOURCE, productId, sourceId });
       if (stillHere(version)) await showDetail(productId);
     },
-  });
-  setView(view);
-}
-
-async function showOtherStores(productId) {
-  const version=beginRoute();
-  const {products}=await send({type:MSG.GET_PRODUCTS});
-  if(!stillHere(version))return;
-  const product=products?.[productId];if(!product)return showList();
-  const view=renderOtherStores({product,isActive:()=>stillHere(version),
-    onBack:()=>navigate(()=>showDetail(productId)),
-    onSearch:(query)=>send({type:MSG.DISCOVER_STORES,productId,query}),
-    onAnalyze:(url)=>send({type:MSG.ANALYZE_STORE_URL,productId,url}),
-    onAdd:(url)=>send({type:MSG.ADD_SOURCE,productId,url}),
   });
   setView(view);
 }

@@ -12,14 +12,11 @@
 
 import { parsePrice } from '../shared/currency.js';
 import { HEURISTIC_SELECTORS } from '../shared/constants.js';
-import { extractProductMetadata, parseSearchRss, hashProductImage } from './discovery-tools.js';
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'PLAY_SOUND') { playBeep(); sendResponse({ ok: true }); return true; }
-  if (!['PARSE_HTML', 'PARSE_SEARCH_RSS', 'HASH_PRODUCT_IMAGE'].includes(msg.type)) return false;
-  const task = msg.type === 'PARSE_SEARCH_RSS' ? Promise.resolve().then(() => parseSearchRss(msg.xml))
-    : msg.type === 'HASH_PRODUCT_IMAGE' ? hashProductImage(msg) : handleParse(msg);
-  task.then(sendResponse).catch((err) => {
+  if (msg.type !== 'PARSE_HTML') return false;
+  handleParse(msg).then(sendResponse).catch((err) => {
     sendResponse({ error: err.message });
   });
   return true;
@@ -28,7 +25,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 /**
  * @param {{ html: string, userSelector?: string }} msg
  */
-async function handleParse({ html, userSelector, url }) {
+async function handleParse({ html, userSelector }) {
   // Template contents are inert: even SVG load and image error handlers cannot
   // run here. Strip active markup BEFORE it reaches an HTMLDocument parser.
   const template = document.createElement('template');
@@ -48,30 +45,29 @@ async function handleParse({ html, userSelector, url }) {
     const target = tag === 'html' ? doc.documentElement : doc.body;
     for (const attribute of Array.from(element?.attributes ?? [])) target.setAttribute(attribute.name, attribute.value);
   }
-  const metadata = extractProductMetadata(doc, url);
   const thumbnail = extractThumbnail(doc);
   const inStock = extractStock(doc);
   // ── Strategy 1: User-defined selector ─────────────────────────────────────
   if (userSelector) {
     const result = trySelector(doc, userSelector);
-    if (result) return { ...result, strategy: 1, selectorUsed: userSelector, thumbnail, inStock, metadata };
+    if (result) return { ...result, strategy: 1, selectorUsed: userSelector, thumbnail, inStock };
   }
 
   // ── Strategy 2: JSON-LD ───────────────────────────────────────────────────
   const jsonLd = tryJsonLd(doc);
-  if (jsonLd) return { ...jsonLd, strategy: 2, selectorUsed: 'json-ld', thumbnail, metadata };
+  if (jsonLd) return { ...jsonLd, strategy: 2, selectorUsed: 'json-ld', thumbnail };
 
   // ── Strategy 3: Open Graph ────────────────────────────────────────────────
   const og = tryOpenGraph(doc);
-  if (og) return { ...og, strategy: 3, selectorUsed: 'og:price', thumbnail, inStock, metadata };
+  if (og) return { ...og, strategy: 3, selectorUsed: 'og:price', thumbnail, inStock };
 
   // ── Strategy 4: Heuristic selectors ──────────────────────────────────────
   for (const sel of HEURISTIC_SELECTORS) {
     const result = trySelector(doc, sel);
-    if (result) return { ...result, strategy: 4, selectorUsed: sel, thumbnail, inStock, metadata };
+    if (result) return { ...result, strategy: 4, selectorUsed: sel, thumbnail, inStock };
   }
 
-  return { price: null, currency: null, strategy: null, selectorUsed: null, thumbnail, inStock, metadata };
+  return { price: null, currency: null, strategy: null, selectorUsed: null, thumbnail, inStock };
 }
 
 // Lexically remove executable attributes before invoking a DOM HTML parser.

@@ -13,8 +13,6 @@ import { syncToGist } from './gist-sync.js';
 import { productIdFromNotification } from './notifier.js';
 import { normalizeOrganization, referenceCurrency, normalizeCurrency } from '../shared/product-state.js';
 import { checkSyncQuota } from '../shared/backup.js';
-import { discoverStores, analyzeStoreUrl } from './store-discovery.js';
-import { normalizeCandidateUrl } from '../shared/discovery.js';
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -81,7 +79,7 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
 // ── Messages ──────────────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.target === 'offscreen' || ['PARSE_HTML','PARSE_SEARCH_RSS','HASH_PRODUCT_IMAGE','PLAY_SOUND'].includes(msg.type)) return false;
+  if (msg.target === 'offscreen' || ['PARSE_HTML','PLAY_SOUND'].includes(msg.type)) return false;
   if (msg.type === MSG.PICKER_RESULT) {
     withMutation(() => handlePickerResult(msg, sender)).then(sendResponse).catch((err) => sendResponse({ error: err.message }));
     return true;
@@ -130,8 +128,6 @@ async function dispatchMessage(msg) {
     case MSG.CHECK_ALL:       return handleCheckAll();
     case MSG.RESUME_ALL:      return handleResumeAll();
     case MSG.IMPORT_URLS:     return handleImportUrls(msg.urls);
-    case MSG.DISCOVER_STORES: return discoverStores(msg.productId, msg.query);
-    case MSG.ANALYZE_STORE_URL: return analyzeStoreUrl(msg.productId, msg.url);
     case MSG.ADD_SOURCE:      return handleAddSource(msg.productId, msg.url);
     case MSG.REMOVE_SOURCE:   return handleRemoveSource(msg.productId, msg.sourceId);
     case MSG.GIST_SYNC:       return syncToGist();
@@ -326,8 +322,11 @@ async function handleAddSource(productId, url) {
   const product = await getProduct(productId);
   if (!product) return { error: 'Product not found' };
   const withSources = ensureSources(product);
-  const normalized = normalizeCandidateUrl(url);
-  if (withSources.sources.some((s) => [s.url,s.canonicalUrl].some((value)=>value === url || normalized && normalizeCandidateUrl(value) === normalized))) return { error: 'already_added' };
+  const withoutFragment = (value) => {
+    try { const parsed = new URL(value); parsed.hash = ''; return parsed.href; } catch { return null; }
+  };
+  const normalized = withoutFragment(url);
+  if (withSources.sources.some((s) => [s.url, s.canonicalUrl].some((value) => value && withoutFragment(value) === normalized))) return { error: 'already_added' };
   const newSource = {
     id: generateId(), url, canonicalUrl: null, label: hostnameOf(url),
     selectors: { price: null }, requiresTabExtraction: false,

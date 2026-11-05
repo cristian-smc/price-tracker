@@ -19,10 +19,10 @@ export function normalizeOrganization({ group = '', tags = [] } = {}) {
   return { group, tags: [...unique.values()] };
 }
 export function trackingHealth(record, intervalMinutes = 15, enabled = true, now = Date.now()) {
-  if (record.disabledReason === 'errors') return { state: 'repair', label: 'Needs repair', detail: 'Tracking stopped after repeated failures. Repair the selector, then resume.' };
+  if (record.disabledReason === 'errors') return { state: 'repair', label: 'Checks paused', detail: 'Tracking stopped after repeated failures. Resume to retry automatic price detection.' };
   if (!enabled) return { state: 'paused', label: 'Paused', detail: 'Automatic checks are paused.' };
   if (record.checkStatus === 'error') return { state: 'repair', label: 'Check failed', detail: record.lastError || 'The latest check failed. The displayed price may be old.' };
-  if (record.checkStatus === 'no_price') return { state: 'repair', label: 'Needs repair', detail: 'The latest check found no price. Try picking the price element again.' };
+  if (record.checkStatus === 'no_price') return { state: 'repair', label: 'Price unavailable', detail: 'The latest check found no price. Price detection retries automatically on the next scheduled check.' };
   if (record.checkStatus === 'currency_mismatch') return { state: 'mismatch', label: 'Different currency', detail: 'No fresh source price matches the watch currency. Other currencies are not compared.' };
   if (!record.lastObserved) return record.currentPrice != null
     ? { state: 'unknown', label: 'Freshness unknown', detail: 'This saved price has no verified observation time. Run a check to refresh it.' }

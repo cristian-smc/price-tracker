@@ -260,8 +260,8 @@ function buildCard(p, onSelect, onReorder, onDelete, onRepair) {
   row1.appendChild(priceEl);
   body.appendChild(row1);
 
-  body.appendChild(makeRow2(p));
   inner.appendChild(body);
+  inner.appendChild(makeRow2(p));
 
   // Drag handle
   const handle = document.createElement('div');
@@ -277,16 +277,6 @@ function buildCard(p, onSelect, onReorder, onDelete, onRepair) {
 
   card.appendChild(inner);
   card.appendChild(handle);
-  const health = trackingHealth(p, p.intervalMinutes, p.enabled);
-  if (onRepair && ['repair', 'stale', 'unknown'].includes(health.state)) {
-    const repair = document.createElement('button'); repair.type = 'button'; repair.className = 'card-repair'; repair.textContent = 'Repair selector';
-    repair.addEventListener('click', async (event) => {
-      event.stopPropagation(); repair.disabled = true;
-      try { await onRepair(p.id, p.sources?.[0]?.id ?? null); }
-      catch (err) { const error = document.createElement('span'); error.className = 'action-status'; error.setAttribute('role', 'alert'); error.textContent = err.message; card.appendChild(error); }
-      finally { repair.disabled = false; }
-    }); card.appendChild(repair);
-  }
   if (onDelete) {
     card.classList.add('has-delete');
     const remove = document.createElement('button');

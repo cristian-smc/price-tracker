@@ -17,7 +17,7 @@
 import { displayPrice } from '../components/currency-badge.js';
 import { renderSparkline } from '../components/sparkline.js';
 import { applyAffiliate } from '../../shared/affiliate.js';
-import { referenceCurrency, normalizeCurrency, trackingHealth, trustedHistory } from '../../shared/product-state.js';
+import { referenceCurrency, normalizeCurrency, trackingHealth } from '../../shared/product-state.js';
 
 export function renderProductDetail({
   product,
@@ -33,11 +33,11 @@ export function renderProductDetail({
   onAddSource,
   onRemoveSource,
   onRepair,
-  onDiscover,
 }) {
   const currency = referenceCurrency(product);
-  const verifiedHistory = trustedHistory(product, history);
-  const earlierHistory = history.filter((point) => point.currency !== currency);
+  // Preserve legacy observations in the one visible chart. Known foreign-unit
+  // points are not relabelled; the history in storage is never modified here.
+  const displayHistory = history.filter((point) => !point.currency || point.currency === currency);
   const wrap = document.createElement('div');
   wrap.className = 'detail-view';
 
@@ -90,11 +90,6 @@ export function renderProductDetail({
   const explanation = document.createElement('p'); explanation.textContent = health.detail;
   const unit = document.createElement('p'); unit.textContent = `Watch currency: ${currency}. Other currencies are shown separately, without conversion.`;
   healthPanel.append(heading, explanation, unit);
-  if (onRepair) {
-    const repair = document.createElement('button'); repair.type = 'button'; repair.className = 'btn btn-secondary'; repair.textContent = 'Repair price selector';
-    repair.addEventListener('click', async () => { repair.disabled = true; try { await onRepair(product.id, product.sources?.[0]?.id ?? null); } catch (err) { explanation.textContent = err.message; } finally { repair.disabled = false; } });
-    healthPanel.appendChild(repair);
-  }
   wrap.appendChild(healthPanel);
   const tags = document.createElement('div'); tags.className = 'organization-chips';
   for (const value of [product.group, ...(product.tags ?? [])].filter(Boolean)) { const chip = document.createElement('span'); chip.className = 'badge tag'; chip.textContent = value; tags.appendChild(chip); }
@@ -139,20 +134,8 @@ export function renderProductDetail({
   // ── Sparkline ─────────────────────────────────────────────────────────────
   const chartContainer = document.createElement('div');
   chartContainer.className = 'sparkline-container';
-  chartContainer.appendChild(renderSparkline(verifiedHistory.length ? verifiedHistory : earlierHistory, { width: 340, height: 64, currency }));
+  chartContainer.appendChild(renderSparkline(displayHistory, { width: 340, height: 64, currency }));
   wrap.appendChild(chartContainer);
-  if (earlierHistory.length) {
-    const note = document.createElement('p'); note.className = 'hint';
-    note.textContent = verifiedHistory.length ? `${earlierHistory.length} earlier observations are preserved below. Their currency is unverified and they do not affect current comparisons.` : 'Earlier history is shown as recorded. Its currency is unverified; values have not been converted and do not affect current comparisons.';
-    wrap.appendChild(note);
-    if (verifiedHistory.length) {
-      const earlier = document.createElement('details');
-      const summary = document.createElement('summary'); summary.textContent = `Earlier history (${earlierHistory.length} points · unverified currency)`;
-      const chart = document.createElement('div'); chart.className = 'sparkline-container';
-      chart.appendChild(renderSparkline(earlierHistory, { width: 340, height: 64, currency }));
-      earlier.append(summary, chart); wrap.appendChild(earlier);
-    }
-  }
 
   // ── Meta grid ─────────────────────────────────────────────────────────────
   const meta = document.createElement('div');
@@ -213,7 +196,7 @@ export function renderProductDetail({
 
   // ── Sources ───────────────────────────────────────────────────────────────
   const sources = product.sources ?? [];
-  wrap.appendChild(buildSourcesSection(product, sources, onAddSource, onRemoveSource, settings, onRepair, onDiscover));
+  wrap.appendChild(buildSourcesSection(product, sources, onAddSource, onRemoveSource, settings, onRepair));
 
   // ── Notification toggle ───────────────────────────────────────────────────
   const notifRow = document.createElement('div');
@@ -296,7 +279,7 @@ export function renderProductDetail({
 
 // ── Sources section ───────────────────────────────────────────────────────────
 
-function buildSourcesSection(product, sources, onAddSource, onRemoveSource, settings, onRepair, onDiscover) {
+function buildSourcesSection(product, sources, onAddSource, onRemoveSource, settings, onRepair) {
   const section = document.createElement('div');
   section.className = 'sources-section';
 
@@ -306,12 +289,14 @@ function buildSourcesSection(product, sources, onAddSource, onRemoveSource, sett
   headerLabel.className = 'label';
   headerLabel.textContent = sources.length > 1 ? `Sources (${sources.length})` : 'Sources';
   header.appendChild(headerLabel);
-  const find = document.createElement('button'); find.type='button';find.className='find-stores';
-  find.textContent='Find other stores';find.title='Compare product images and add another store without leaving the popup.';
-  find.disabled=!onDiscover;find.addEventListener('click',()=>onDiscover?.(product.id));
+  const find = document.createElement('a'); find.className = 'find-stores';
+  find.textContent = 'Find other stores ↗';
+  find.href = `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(product.name)}`;
+  find.target = '_blank'; find.rel = 'noopener noreferrer';
+  find.title = 'Search Google Shopping in a new tab. Check the model and variant before adding a source.';
   header.appendChild(find);
   section.appendChild(header);
-  const discoveryHint = document.createElement('p'); discoveryHint.className = 'hint'; discoveryHint.textContent = 'Search and visually compare other stores, or add a product URL directly.'; section.appendChild(discoveryHint);
+  const discoveryHint = document.createElement('p'); discoveryHint.className = 'hint'; discoveryHint.textContent = 'Find the same model and variant, then paste its product URL below to track that store.'; section.appendChild(discoveryHint);
 
   if (sources.length > 0) {
     const list = document.createElement('div');
@@ -425,10 +410,6 @@ function buildSourceItem(source, product, totalSources, onRemoveSource, settings
   const health = trackingHealth(source, product.intervalMinutes, product.enabled);
   const status = document.createElement('span'); status.className = `source-health health-${health.state}`; status.textContent = health.label + (source.lastObserved ? ` · ${formatRelativeTime(source.lastObserved)}` : ''); status.title = health.detail; left.appendChild(status);
   item.appendChild(left);
-  if (onRepair) {
-    const repair = document.createElement('button'); repair.type = 'button'; repair.className = 'source-repair'; repair.textContent = 'Repair'; repair.setAttribute('aria-label', `Repair selector for ${source.label ?? source.url}`);
-    repair.addEventListener('click', async () => { repair.disabled = true; try { await onRepair(product.id, source.id); } catch (err) { status.textContent = err.message; } finally { repair.disabled = false; } }); item.appendChild(repair);
-  }
 
   if (totalSources > 1) {
     const removeBtn = document.createElement('button');

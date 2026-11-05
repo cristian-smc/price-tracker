@@ -25,6 +25,10 @@ test.each([['JPY','1500',1500],['KRW','12900',12900],['USD','29.99',2999],['EUR'
   expect(companion.extractPrice(cheerio.load(`<meta property="product:price:amount" content="${raw}"><meta property="product:price:currency" content="${currency}">`))).toMatchObject({price:want,currency});
 });
 
+test('numeric attribute price uses surrounding RON currency instead of USD fallback',()=>{
+  expect(companion.extractPrice(cheerio.load('<div><span class="price" data-price="167">167</span><span>Lei</span></div>'),'.price')).toMatchObject({price:16700,currency:'RON'});
+});
+
 test('failed Android price-drop notification retries same observed price', async () => {
   const state = { test: { lastPrice: 5000 } };
   global.fetch.mockImplementation(async () => ({ok:true,status:200,text:async () => '<span class="price">$40.00</span>'}));

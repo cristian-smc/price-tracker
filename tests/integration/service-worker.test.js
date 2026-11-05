@@ -24,7 +24,7 @@ global.chrome = {
   scripting: { executeScript: jest.fn(async () => []) },
 };
 // Network boundaries only: real worker, storage, source migration, alarm and badge code.
-jest.unstable_mockModule('../../src/background/fetcher.js', () => ({ fetchAndExtract: jest.fn(async () => ({ price: 2000, currency: 'EUR', error: null })), offscreenRequest: jest.fn() }));
+jest.unstable_mockModule('../../src/background/fetcher.js', () => ({ fetchAndExtract: jest.fn(async () => ({ price: 2000, currency: 'EUR', error: null })) }));
 jest.unstable_mockModule('../../src/background/tab-fetcher.js', () => ({ tabFetchAndExtract: jest.fn() }));
 const { fetchAndExtract } = await import('../../src/background/fetcher.js');
 await import('../../src/background/service-worker.js');

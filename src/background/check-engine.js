@@ -145,7 +145,14 @@ async function checkOneSource(source) {
     neverExtracted: source.currentPrice == null && (source.consecutiveNulls ?? 0) === 0,
   };
 
-  const result = await doFetch(target);
+  let result = await doFetch(target);
+  let autoDetected = Boolean(target.selectors?.price && result.price != null && result.strategy !== 1);
+  if (result.price == null && !result.error && target.selectors?.price) {
+    // One bounded recovery attempt, not a loop: rediscover after selector drift.
+    // Never treat network blocking as a selector problem or change paused state.
+    const recovered = await doFetch({ ...target, selectors: { price: null } });
+    if (recovered.price != null && !recovered.error) { result = recovered; autoDetected = true; }
+  }
 
   if (result.error) {
     return {
@@ -155,7 +162,8 @@ async function checkOneSource(source) {
     };
   }
 
-  const { selectors, consecutiveNulls } = resolveSelectorsForSource(source, result);
+  const selectorSource = autoDetected ? { ...source, selectors: { ...source.selectors, price: null } } : source;
+  const { selectors, consecutiveNulls } = resolveSelectorsForSource(selectorSource, result);
 
   return {
     ...source,
