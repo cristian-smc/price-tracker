@@ -4,10 +4,10 @@
   "description": "Chrome extension to track e-commerce prices",
   "type": "module",
   "scripts": {
-    "test": "node --experimental-vm-modules node_modules/.bin/jest",
-    "test:unit": "node --experimental-vm-modules node_modules/.bin/jest tests/unit",
-    "test:integration": "node --experimental-vm-modules node_modules/.bin/jest tests/integration",
-    "test:watch": "node --experimental-vm-modules node_modules/.bin/jest --watch"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/unit",
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/integration",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch"
   },
   "devDependencies": {
     "jest": "^29.7.0",

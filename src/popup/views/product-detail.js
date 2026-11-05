@@ -17,6 +17,7 @@
 import { displayPrice } from '../components/currency-badge.js';
 import { renderSparkline } from '../components/sparkline.js';
 import { applyAffiliate } from '../../shared/affiliate.js';
+import { referenceCurrency, normalizeCurrency, trackingHealth, trustedHistory } from '../../shared/product-state.js';
 
 export function renderProductDetail({
   product,
@@ -31,7 +32,12 @@ export function renderProductDetail({
   onToggleStockCheck,
   onAddSource,
   onRemoveSource,
+  onRepair,
+  onDiscover,
 }) {
+  const currency = referenceCurrency(product);
+  const verifiedHistory = trustedHistory(product, history);
+  const earlierHistory = history.filter((point) => point.currency !== currency);
   const wrap = document.createElement('div');
   wrap.className = 'detail-view';
 
@@ -59,39 +65,54 @@ export function renderProductDetail({
 
   const priceBig = document.createElement('span');
   priceBig.className = 'price-big';
-  priceBig.textContent = displayPrice(product.currentPrice, product.currency);
+  priceBig.textContent = displayPrice(product.currentPrice, currency);
   priceRow.appendChild(priceBig);
 
   if (product.targetPrice !== null) {
     const target = document.createElement('span');
     target.className = 'price-target';
-    target.textContent = `Target: ${displayPrice(product.targetPrice, product.currency)}`;
+    target.textContent = `Target: ${displayPrice(product.targetPrice, currency)}`;
     priceRow.appendChild(target);
   }
 
   if (product.sellThreshold != null) {
     const sell = document.createElement('span');
     sell.className = 'price-target';
-    sell.textContent = `Sell: ${displayPrice(product.sellThreshold, product.currency)}`;
+    sell.textContent = `Sell: ${displayPrice(product.sellThreshold, currency)}`;
     sell.style.color = 'var(--warning)';
     priceRow.appendChild(sell);
   }
 
   wrap.appendChild(priceRow);
+  const health = trackingHealth(product, product.intervalMinutes, product.enabled);
+  const healthPanel = document.createElement('div'); healthPanel.className = `health-panel health-${health.state}`;
+  const heading = document.createElement('strong'); heading.textContent = health.label;
+  const explanation = document.createElement('p'); explanation.textContent = health.detail;
+  const unit = document.createElement('p'); unit.textContent = `Watch currency: ${currency}. Other currencies are shown separately, without conversion.`;
+  healthPanel.append(heading, explanation, unit);
+  if (onRepair) {
+    const repair = document.createElement('button'); repair.type = 'button'; repair.className = 'btn btn-secondary'; repair.textContent = 'Repair price selector';
+    repair.addEventListener('click', async () => { repair.disabled = true; try { await onRepair(product.id, product.sources?.[0]?.id ?? null); } catch (err) { explanation.textContent = err.message; } finally { repair.disabled = false; } });
+    healthPanel.appendChild(repair);
+  }
+  wrap.appendChild(healthPanel);
+  const tags = document.createElement('div'); tags.className = 'organization-chips';
+  for (const value of [product.group, ...(product.tags ?? [])].filter(Boolean)) { const chip = document.createElement('span'); chip.className = 'badge tag'; chip.textContent = value; tags.appendChild(chip); }
+  if (tags.childNodes.length) wrap.appendChild(tags);
 
   // ── Price stats (initial / lowest / highest) ──────────────────────────────
-  if (product.initialPrice != null || product.lowestPrice != null || product.highestPrice != null) {
+  if (product.statsCurrency === currency && (product.initialPrice != null || product.lowestPrice != null || product.highestPrice != null)) {
     const stats = document.createElement('div');
     stats.className = 'price-stats';
 
     if (product.initialPrice != null) {
-      stats.appendChild(makePriceStat('Initial', displayPrice(product.initialPrice, product.currency), ''));
+      stats.appendChild(makePriceStat('Initial', displayPrice(product.initialPrice, currency), ''));
     }
     if (product.lowestPrice != null) {
-      stats.appendChild(makePriceStat('Lowest', displayPrice(product.lowestPrice, product.currency), 'low'));
+      stats.appendChild(makePriceStat('Lowest', displayPrice(product.lowestPrice, currency), 'low'));
     }
     if (product.highestPrice != null) {
-      stats.appendChild(makePriceStat('Highest', displayPrice(product.highestPrice, product.currency), 'high'));
+      stats.appendChild(makePriceStat('Highest', displayPrice(product.highestPrice, currency), 'high'));
     }
     wrap.appendChild(stats);
   }
@@ -101,25 +122,45 @@ export function renderProductDetail({
   checkBtn.className = 'btn btn-primary';
   checkBtn.style.alignSelf = 'flex-start';
   checkBtn.textContent = 'Check now';
-  checkBtn.addEventListener('click', () => {
-    checkBtn.disabled = true;
-    checkBtn.innerHTML = '<span class="spinner"></span> Checking…';
-    onCheckNow(product.id);
-  });
+  const status = document.createElement('div');
+  status.className = 'action-status'; status.setAttribute('aria-live', 'polite');
+  wrap.appendChild(status);
+  async function runAction(button, action, pending = 'Saving…') {
+    const label = button.textContent;
+    button.disabled = true; button.textContent = pending;
+    status.textContent = ''; status.removeAttribute('role');
+    try { await action(); status.textContent = 'Done.'; }
+    catch (err) { status.setAttribute('role', 'alert'); status.textContent = err.message || 'Action failed. Please try again.'; }
+    finally { button.disabled = false; button.textContent = label; }
+  }
+  checkBtn.addEventListener('click', () => runAction(checkBtn, () => onCheckNow(product.id), 'Checking…'));
   wrap.appendChild(checkBtn);
 
   // ── Sparkline ─────────────────────────────────────────────────────────────
   const chartContainer = document.createElement('div');
   chartContainer.className = 'sparkline-container';
-  chartContainer.appendChild(renderSparkline(history, { width: 340, height: 64, currency: product.currency ?? 'USD' }));
+  chartContainer.appendChild(renderSparkline(verifiedHistory.length ? verifiedHistory : earlierHistory, { width: 340, height: 64, currency }));
   wrap.appendChild(chartContainer);
+  if (earlierHistory.length) {
+    const note = document.createElement('p'); note.className = 'hint';
+    note.textContent = verifiedHistory.length ? `${earlierHistory.length} earlier observations are preserved below. Their currency is unverified and they do not affect current comparisons.` : 'Earlier history is shown as recorded. Its currency is unverified; values have not been converted and do not affect current comparisons.';
+    wrap.appendChild(note);
+    if (verifiedHistory.length) {
+      const earlier = document.createElement('details');
+      const summary = document.createElement('summary'); summary.textContent = `Earlier history (${earlierHistory.length} points · unverified currency)`;
+      const chart = document.createElement('div'); chart.className = 'sparkline-container';
+      chart.appendChild(renderSparkline(earlierHistory, { width: 340, height: 64, currency }));
+      earlier.append(summary, chart); wrap.appendChild(earlier);
+    }
+  }
 
   // ── Meta grid ─────────────────────────────────────────────────────────────
   const meta = document.createElement('div');
   meta.className = 'meta-grid';
 
   meta.appendChild(makeMetaItem('Check interval', `Every ${product.intervalMinutes} min`));
-  meta.appendChild(makeMetaItem('Last checked', product.lastChecked ? formatRelativeTime(product.lastChecked) : '—'));
+  meta.appendChild(makeMetaItem('Last attempt', product.lastChecked ? formatRelativeTime(product.lastChecked) : '—'));
+  meta.appendChild(makeMetaItem('Price observed', product.lastObserved ? formatRelativeTime(product.lastObserved) : 'Unknown'));
   meta.appendChild(makeMetaItem('History points', String(history.length)));
 
   if (product.consecutiveErrors > 0) {
@@ -172,7 +213,7 @@ export function renderProductDetail({
 
   // ── Sources ───────────────────────────────────────────────────────────────
   const sources = product.sources ?? [];
-  wrap.appendChild(buildSourcesSection(product, sources, onAddSource, onRemoveSource, settings));
+  wrap.appendChild(buildSourcesSection(product, sources, onAddSource, onRemoveSource, settings, onRepair, onDiscover));
 
   // ── Notification toggle ───────────────────────────────────────────────────
   const notifRow = document.createElement('div');
@@ -184,7 +225,8 @@ export function renderProductDetail({
   const notifInput = document.createElement('input');
   notifInput.type = 'checkbox';
   notifInput.checked = product.notificationEnabled !== false;
-  notifInput.addEventListener('change', () => onToggleNotification(product.id, notifInput.checked));
+  notifInput.setAttribute('aria-label', notifLabel.textContent);
+  notifInput.addEventListener('change', () => saveToggle(notifInput, onToggleNotification));
   const notifSlider = document.createElement('span');
   notifSlider.className = 'toggle-slider';
   notifLabel2.appendChild(notifInput);
@@ -204,7 +246,15 @@ export function renderProductDetail({
   const stockInput = document.createElement('input');
   stockInput.type = 'checkbox';
   stockInput.checked = product.checkStockEnabled !== false;
-  stockInput.addEventListener('change', () => onToggleStockCheck(product.id, stockInput.checked));
+  stockInput.setAttribute('aria-label', stockLabel.textContent);
+  stockInput.addEventListener('change', () => saveToggle(stockInput, onToggleStockCheck));
+  async function saveToggle(input, action) {
+    const value = input.checked;
+    input.disabled = true;
+    try { await action(product.id, value); }
+    catch (err) { input.checked = !value; status.setAttribute('role', 'alert'); status.textContent = err.message || 'Could not save preference.'; }
+    finally { input.disabled = false; }
+  }
   const stockSlider = document.createElement('span');
   stockSlider.className = 'toggle-slider';
   stockLabel2.appendChild(stockInput);
@@ -225,14 +275,14 @@ export function renderProductDetail({
   const toggleBtn = document.createElement('button');
   toggleBtn.className = 'btn btn-secondary';
   toggleBtn.textContent = product.enabled ? 'Pause' : 'Resume';
-  toggleBtn.addEventListener('click', () => onToggleEnabled(product.id, !product.enabled));
+  toggleBtn.addEventListener('click', () => runAction(toggleBtn, () => onToggleEnabled(product.id, !product.enabled)));
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'btn btn-danger';
   deleteBtn.textContent = 'Delete';
   deleteBtn.addEventListener('click', () => {
     if (confirm(`Stop tracking "${product.name}"?`)) {
-      onDelete(product.id);
+      runAction(deleteBtn, () => onDelete(product.id), 'Deleting…');
     }
   });
 
@@ -246,7 +296,7 @@ export function renderProductDetail({
 
 // ── Sources section ───────────────────────────────────────────────────────────
 
-function buildSourcesSection(product, sources, onAddSource, onRemoveSource, settings) {
+function buildSourcesSection(product, sources, onAddSource, onRemoveSource, settings, onRepair, onDiscover) {
   const section = document.createElement('div');
   section.className = 'sources-section';
 
@@ -256,19 +306,24 @@ function buildSourcesSection(product, sources, onAddSource, onRemoveSource, sett
   headerLabel.className = 'label';
   headerLabel.textContent = sources.length > 1 ? `Sources (${sources.length})` : 'Sources';
   header.appendChild(headerLabel);
+  const find = document.createElement('button'); find.type='button';find.className='find-stores';
+  find.textContent='Find other stores';find.title='Compare product images and add another store without leaving the popup.';
+  find.disabled=!onDiscover;find.addEventListener('click',()=>onDiscover?.(product.id));
+  header.appendChild(find);
   section.appendChild(header);
+  const discoveryHint = document.createElement('p'); discoveryHint.className = 'hint'; discoveryHint.textContent = 'Search and visually compare other stores, or add a product URL directly.'; section.appendChild(discoveryHint);
 
   if (sources.length > 0) {
     const list = document.createElement('div');
     list.className = 'source-list';
-    const sorted = [...sources].sort((a, b) => {
-      if (a.currentPrice == null && b.currentPrice == null) return 0;
-      if (a.currentPrice == null) return 1;
-      if (b.currentPrice == null) return -1;
-      return a.currentPrice - b.currentPrice;
-    });
-    for (const source of sorted) {
-      list.appendChild(buildSourceItem(source, product, sources.length, onRemoveSource, settings));
+    const reference = referenceCurrency(product);
+    const currencies = [...new Set(sources.map((s) => normalizeCurrency(s.currency) ?? 'Unknown'))].sort((a, b) => a === reference ? -1 : b === reference ? 1 : a.localeCompare(b));
+    for (const currency of currencies) {
+      const heading = document.createElement('div'); heading.className = 'source-currency-heading';
+      heading.textContent = currency === reference ? `${currency} · compared stores` : `${currency} · Not compared`;
+      list.appendChild(heading);
+      const group = sources.filter((s) => (normalizeCurrency(s.currency) ?? 'Unknown') === currency).sort((a, b) => (a.currentPrice ?? Infinity) - (b.currentPrice ?? Infinity));
+      for (const source of group) list.appendChild(buildSourceItem(source, product, sources.length, onRemoveSource, settings, onRepair));
     }
     section.appendChild(list);
   }
@@ -281,6 +336,7 @@ function buildSourcesSection(product, sources, onAddSource, onRemoveSource, sett
   urlInput.type = 'url';
   urlInput.placeholder = 'https://other-store.com/same-product';
   urlInput.className = 'add-source-input';
+  urlInput.setAttribute('aria-label', 'Additional store URL');
 
   const addBtn = document.createElement('button');
   addBtn.type = 'button';
@@ -290,11 +346,13 @@ function buildSourcesSection(product, sources, onAddSource, onRemoveSource, sett
 
   const errEl = document.createElement('span');
   errEl.className = 'add-source-error';
+  errEl.setAttribute('role', 'alert');
 
   addBtn.addEventListener('click', async () => {
     const url = urlInput.value.trim();
     if (!url) return;
-    try { new URL(url); } catch { errEl.textContent = 'Invalid URL'; return; }
+    try { if (!['http:', 'https:'].includes(new URL(url).protocol)) throw new Error(); }
+    catch { errEl.textContent = 'Enter an HTTP or HTTPS URL'; urlInput.focus(); return; }
     errEl.textContent = '';
     addBtn.disabled = true;
     addBtn.textContent = 'Adding…';
@@ -305,8 +363,10 @@ function buildSourcesSection(product, sources, onAddSource, onRemoveSource, sett
         addBtn.disabled = false;
         addBtn.textContent = '+ Add';
       }
-    } catch {
-      errEl.textContent = 'Failed to add source';
+      if (!resp?.error) urlInput.value = '';
+    } catch (err) {
+      errEl.textContent = err.message || 'Failed to add source';
+    } finally {
       addBtn.disabled = false;
       addBtn.textContent = '+ Add';
     }
@@ -320,7 +380,7 @@ function buildSourcesSection(product, sources, onAddSource, onRemoveSource, sett
   return section;
 }
 
-function buildSourceItem(source, product, totalSources, onRemoveSource, settings) {
+function buildSourceItem(source, product, totalSources, onRemoveSource, settings, onRepair) {
   const item = document.createElement('div');
   item.className = 'source-item' + (source.id === product.bestSourceId ? ' best' : '');
 
@@ -342,7 +402,7 @@ function buildSourceItem(source, product, totalSources, onRemoveSource, settings
     priceEl.textContent = '—';
     priceEl.style.color = 'var(--text-muted)';
   } else {
-    priceEl.textContent = displayPrice(source.currentPrice, source.currency ?? product.currency);
+    priceEl.textContent = normalizeCurrency(source.currency) ? displayPrice(source.currentPrice, source.currency) : `${source.currentPrice} (currency unknown)`;
     if (source.id === product.bestSourceId) {
       priceEl.classList.add('best');
     }
@@ -362,7 +422,13 @@ function buildSourceItem(source, product, totalSources, onRemoveSource, settings
 
   left.appendChild(label);
   left.appendChild(priceEl);
+  const health = trackingHealth(source, product.intervalMinutes, product.enabled);
+  const status = document.createElement('span'); status.className = `source-health health-${health.state}`; status.textContent = health.label + (source.lastObserved ? ` · ${formatRelativeTime(source.lastObserved)}` : ''); status.title = health.detail; left.appendChild(status);
   item.appendChild(left);
+  if (onRepair) {
+    const repair = document.createElement('button'); repair.type = 'button'; repair.className = 'source-repair'; repair.textContent = 'Repair'; repair.setAttribute('aria-label', `Repair selector for ${source.label ?? source.url}`);
+    repair.addEventListener('click', async () => { repair.disabled = true; try { await onRepair(product.id, source.id); } catch (err) { status.textContent = err.message; } finally { repair.disabled = false; } }); item.appendChild(repair);
+  }
 
   if (totalSources > 1) {
     const removeBtn = document.createElement('button');
@@ -370,7 +436,16 @@ function buildSourceItem(source, product, totalSources, onRemoveSource, settings
     removeBtn.className = 'source-remove';
     removeBtn.title = 'Remove this source';
     removeBtn.innerHTML = `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M6 2h4a1 1 0 011 1h2v1H3V3h2a1 1 0 011-1zm7 3H3l.8 9.1A1 1 0 004.8 15h6.4a1 1 0 001-.9L13 5z"/></svg>`;
-    removeBtn.addEventListener('click', () => onRemoveSource(product.id, source.id));
+    removeBtn.setAttribute('aria-label', `Remove source ${source.label ?? source.url}`);
+    removeBtn.addEventListener('click', async () => {
+      removeBtn.disabled = true;
+      try { await onRemoveSource(product.id, source.id); }
+      catch (err) {
+        const error = document.createElement('span');
+        error.className = 'add-source-error'; error.setAttribute('role', 'alert');
+        error.textContent = err.message || 'Could not remove source'; item.appendChild(error);
+      } finally { removeBtn.disabled = false; }
+    });
     item.appendChild(removeBtn);
   }
 

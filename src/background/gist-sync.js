@@ -7,6 +7,7 @@
  */
 
 import { getProducts, getSettings, updateSettings } from '../shared/storage.js';
+import { companionProduct } from '../shared/product-state.js';
 
 const GIST_API = 'https://api.github.com/gists';
 const FILENAME  = 'pricewatch.json';
@@ -17,16 +18,7 @@ const FILENAME  = 'pricewatch.json';
  * @returns {object}
  */
 function buildPayload(products) {
-  const list = Object.values(products).map((p) => ({
-    id:              p.id,
-    name:            p.name,
-    url:             p.canonicalUrl ?? p.url,
-    targetPrice:     p.targetPrice  ?? null,
-    currency:        p.currency     ?? 'USD',
-    enabled:         p.enabled,
-    intervalMinutes: p.intervalMinutes,
-    priceSelector:   p.selectors?.price ?? null,
-  }));
+  const list = Object.values(products).map(companionProduct);
   return { exported: new Date().toISOString(), products: list };
 }
 

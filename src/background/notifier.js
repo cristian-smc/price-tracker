@@ -8,11 +8,31 @@
  */
 
 import { formatPrice } from '../shared/currency.js';
-import { getSettings } from '../shared/storage.js';
+import { getSettings, getProduct, withMutation } from '../shared/storage.js';
 import { NOTIFY_COOLDOWN_MULTIPLIER } from '../shared/constants.js';
+import { isComparablePrice } from '../shared/product-state.js';
 
-export async function maybeNotify(product, previousPrice, previousInStock = null) {
+export async function maybeNotify(product, previousPrice, previousInStock = null, isCurrent = null) {
   const settings = await getSettings();
+  if (isCurrent) {
+    // Finish async preparation first; serialize the final fresh read and desktop
+    // dispatch against mutations. Remote push below stays outside this boundary.
+    const dispatched = await withMutation(async () => {
+      const latest = await getProduct(product.id);
+      if (!latest?.enabled || !isCurrent(latest)) return null;
+      return dispatchDesktop(latest, previousPrice, previousInStock, settings);
+    });
+    if (!dispatched) return null;
+    await finishNotification(dispatched, settings);
+    return dispatched.notifId;
+  }
+  const dispatched = await dispatchDesktop(product, previousPrice, previousInStock, settings);
+  if (!dispatched) return null;
+  await finishNotification(dispatched, settings);
+  return dispatched.notifId;
+}
+
+async function dispatchDesktop(product, previousPrice, previousInStock, settings) {
   if (!settings.notificationsEnabled) return null;
   if (product.notificationEnabled === false) return null;
 
@@ -43,21 +63,25 @@ export async function maybeNotify(product, previousPrice, previousInStock = null
     buttons: [{ title: 'View product' }],
   });
 
+  return { notifId, product, title, message, hostname };
+}
+
+async function finishNotification({ product, title, message, hostname }, settings) {
   if (settings.soundEnabled) playSound();
   if (settings.mobilePushUrl) await sendMobilePush(settings.mobilePushUrl, title, message, product.canonicalUrl ?? product.url, hostname);
-
-  return notifId;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function detectEvent(product, previousPrice, previousInStock) {
+  if (!isComparablePrice(product)) return null;
   const { currentPrice, targetPrice, sellThreshold, inStock, checkStockEnabled } = product;
 
   // Only process stock status if stock checking is enabled
   if (checkStockEnabled !== false) {
-    // Back-in-stock: was confirmed OOS last run, now available
-    if (inStock === true && previousInStock === false) return 'back_in_stock';
+    // Stock transitions are actionable only when the current price is below
+    // an explicit target. Otherwise the check silently persists stock status.
+    if (inStock === true && previousInStock === false && targetPrice != null && currentPrice < targetPrice) return 'back_in_stock';
 
     // Suppress price/sell alerts when confirmed out of stock
     if (inStock === false) return null;

@@ -326,6 +326,8 @@ function tabExtractor({ tabId, userSelector, selectors }) {
   }
 
   function detectCurrency(raw) { // NOSONAR
+    if (/¥|￥|\bJPY\b/i.test(raw)) return 'JPY';
+    if (/₩|\bKRW\b/i.test(raw)) return 'KRW';
     if (/\blei\b|RON/i.test(raw)) return 'RON';
     if (/€|EUR/i.test(raw))       return 'EUR';
     if (/£|GBP/i.test(raw))       return 'GBP';
@@ -374,7 +376,8 @@ function tabExtractor({ tabId, userSelector, selectors }) {
       n = s;
     }
     const f = Number.parseFloat(n);
-    return Number.isNaN(f) ? null : Math.round(f * 100);
+    const zeroDecimal = new Set(['BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF']);
+    return Number.isFinite(f) ? Math.round(f * (zeroDecimal.has(resolveCurrency(raw)) ? 1 : 100)) : null;
   }
 
   // Text-scan fallback: collect all visible price-like elements and return the

@@ -54,14 +54,14 @@ if ! command -v pkg &>/dev/null; then
   exit 1
 fi
 
-pkg install -y nodejs cronie termux-api
+pkg install -y nodejs cronie termux-api git util-linux tar
 ok "Packages installed"
 
 # ── Step 2: Node dependencies ─────────────────────────────────────────────────
 
 step 2 "Installing Node dependencies…"
 cd "$SCRIPT_DIR"
-npm install --silent
+if [[ -f package-lock.json ]]; then npm ci --ignore-scripts --silent; else npm install --ignore-scripts --silent; fi
 ok "cheerio installed"
 
 # ── Step 3: GitHub Gist sync (optional but recommended) ──────────────────────
@@ -131,7 +131,11 @@ fi
 step 5 "Setting up cron job (every ${INTERVAL} min)…"
 
 CRON_MARKER="pricewatch-companion"
-CRON_LINE="*/${INTERVAL} * * * * cd \"$SCRIPT_DIR\" && node check.js >> \"$SCRIPT_DIR/check.log\" 2>&1  # ${CRON_MARKER}"
+printf -v CHECK_SCRIPT '%q' "$SCRIPT_DIR/run-check.sh"
+printf -v CHECK_LOG '%q' "$SCRIPT_DIR/check.log"
+CHECK_SCRIPT="${CHECK_SCRIPT//%/\\%}"
+CHECK_LOG="${CHECK_LOG//%/\\%}"
+CRON_LINE="*/${INTERVAL} * * * * bash $CHECK_SCRIPT >> $CHECK_LOG 2>&1  # ${CRON_MARKER}"
 existing=$(crontab -l 2>/dev/null || true)
 
 if echo "$existing" | grep -qF "$CRON_MARKER"; then
@@ -178,20 +182,8 @@ step 8 "Installing home-screen widget shortcuts…"
 SHORTCUTS_DIR="$HOME/.shortcuts/tasks"
 mkdir -p "$SHORTCUTS_DIR"
 
-WIDGET_DIR="$SCRIPT_DIR/widget"
-WIDGETS=("pw-check.sh" "pw-update.sh" "pw-logs.sh")
-
-for w in "${WIDGETS[@]}"; do
-  src="$WIDGET_DIR/$w"
-  dst="$SHORTCUTS_DIR/$w"
-  if [[ -f "$src" ]]; then
-    cp "$src" "$dst"
-    chmod +x "$dst"
-    ok "Shortcut installed: ~/.shortcuts/tasks/$w"
-  else
-    warn "Widget script not found: $src"
-  fi
-done
+bash "$SCRIPT_DIR/install-widgets.sh"
+ok "Shortcuts installed for this checkout: $SCRIPT_DIR"
 
 echo ""
 echo "  To add icons to your home screen:"
@@ -199,7 +191,7 @@ echo "    1. Install 'Termux:Widget' from F-Droid (free)"
 echo "    2. Long-press your home screen → Widgets → Termux:Widget"
 echo "    3. Place the widget; tap it to choose a script:"
 echo "       • pw-check  — manual price check right now"
-echo "       • pw-update — git pull + npm install + restart crond"
+echo "       • pw-update — safely update code/dependencies (keeps your data)"
 echo "       • pw-logs   — view the last 30 lines of check.log"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -210,7 +202,8 @@ echo -e "${GREEN}  Setup complete!${RESET}"
 echo -e "${GREEN}══════════════════════════════════════════${RESET}"
 echo ""
 echo "Check logs:      tail -f $SCRIPT_DIR/check.log"
-echo "Manual run:      node $SCRIPT_DIR/check.js"
+echo "Manual run:      bash $SCRIPT_DIR/run-check.sh"
+echo "Update now:      bash $SCRIPT_DIR/update.sh"
 echo "Change interval: bash $SCRIPT_DIR/setup.sh --interval <minutes>"
 echo ""
 echo "Home screen shortcuts: ~/.shortcuts/pw-check.sh / pw-update.sh / pw-logs.sh"

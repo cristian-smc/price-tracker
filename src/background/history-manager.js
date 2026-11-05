@@ -14,5 +14,5 @@ import { appendHistory, getSettings } from '../shared/storage.js';
  */
 export async function recordObservation(productId, observation) {
   const settings = await getSettings();
-  await appendHistory(productId, { price: observation.price ?? 0 }, settings.historyMaxPoints);
+  await appendHistory(productId, { price: observation.price ?? 0, currency: observation.currency }, settings.historyMaxPoints);
 }

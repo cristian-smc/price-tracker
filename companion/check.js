@@ -7,7 +7,7 @@
  * notifications via termux-notification when a price drops below target.
  *
  * Requirements:
- *   - Node 18+
+ *   - Node 18.17+ (current Termux Node LTS recommended)
  *   - npm install  (installs cheerio)
  *   - Termux:API app installed + `pkg install termux-api` in Termux
  *
@@ -32,7 +32,7 @@
 
 import * as cheerio from 'cheerio';
 import { execFileSync } from 'child_process';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, renameSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -124,13 +124,13 @@ function toMinorUnits(numStr, currency) {
   return isZeroDecimal ? Math.round(float) : Math.round(float * 100);
 }
 
-function parsePriceStr(str) {
+function parsePriceStr(str, currencyHint = null) {
   // Price range — take lower value
   if (/\d\s*[–—]\s*\d/.test(str)) {
     const parts = str.split(/\s*[–—]\s*/);
     if (parts.length === 2) {
-      const a = parsePriceStr(parts[0]);
-      const b = parsePriceStr(parts[1]);
+      const a = parsePriceStr(parts[0], currencyHint);
+      const b = parsePriceStr(parts[1], currencyHint);
       if (a && b) return a.value <= b.value ? a : b;
       return a || b;
     }
@@ -139,7 +139,10 @@ function parsePriceStr(str) {
 
   // Detect the currency symbol/code before stripping filler words, so that a
   // leading ISO code (e.g. "EUR 19.99") isn't consumed by the filler-word strip.
-  const { currency, remainder: afterCurrency } = extractCurrency(str);
+  const detected = extractCurrency(str);
+  const hint = typeof currencyHint === 'string' ? currencyHint.trim().toUpperCase() : null;
+  const currency = detected.remainder !== str || !/^[A-Z]{3}$/.test(hint ?? '') ? detected.currency : hint;
+  const afterCurrency = detected.remainder;
 
   // Strip leading non-price words ("from", "Sale", "Was:", "Only", etc.)
   let remainder = afterCurrency.replace(/^[a-z\s]+(?=\d)/i, '');
@@ -154,10 +157,10 @@ function parsePriceStr(str) {
   return { value, currency };
 }
 
-function parsePrice(raw) {
+function parsePrice(raw, currencyHint = null) {
   if (!raw || typeof raw !== 'string') return null;
   const str = raw.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
-  return parsePriceStr(str);
+  return parsePriceStr(str, currencyHint);
 }
 
 function formatPrice(minorUnits, currency) {
@@ -210,7 +213,9 @@ function trySelectorCheerio($, selector) {
     if (!el.length) return null;
     const raw = el.attr('data-price') || el.attr('content') || el.text();
     if (!raw) return null;
-    const parsed = parsePrice(raw.trim());
+    const hint = $('[itemprop="priceCurrency"]').first().attr('content') ||
+      $('[itemprop="priceCurrency"]').first().text() || $('meta[property="product:price:currency"]').attr('content');
+    const parsed = parsePrice(raw.trim(), hint);
     if (!parsed) return null;
     return { price: parsed.value, currency: parsed.currency };
   } catch {
@@ -227,11 +232,11 @@ function extractLowestOffer(offerList) {
   let lowestPrice = null;
   let currency = null;
   for (const offer of offerList) {
+    if (!offer || typeof offer !== 'object') continue;
     const raw = offer.price ?? offer.lowPrice;
     if (raw == null) continue;
-    const parsed = parsePrice(String(raw));
+    const parsed = parsePrice(String(raw), offer.priceCurrency);
     if (!parsed) continue;
-    if (offer.priceCurrency) parsed.currency = offer.priceCurrency.toUpperCase();
     if (lowestPrice === null || parsed.value < lowestPrice) {
       lowestPrice = parsed.value;
       currency = parsed.currency;
@@ -241,6 +246,7 @@ function extractLowestOffer(offerList) {
 }
 
 function extractFromSchema(schema) {
+  if (!schema || typeof schema !== 'object') return null;
   if (schema['@graph']) {
     for (const node of schema['@graph']) {
       const r = extractFromSchema(node);
@@ -301,6 +307,7 @@ function extractStock(html, $) {
 }
 
 function findJsonLdAvailability(schema) {
+  if (!schema || typeof schema !== 'object') return null;
   if (schema['@graph']) {
     for (const node of schema['@graph']) {
       const r = findJsonLdAvailability(node);
@@ -311,7 +318,7 @@ function findJsonLdAvailability(schema) {
   if (!schema.offers) return null;
   const offerList = Array.isArray(schema.offers) ? schema.offers : [schema.offers];
   for (const offer of offerList) {
-    const avail = offer.availability;
+    const avail = offer?.availability;
     if (!avail) continue;
     const v = String(avail).toLowerCase();
     if (v.includes('instock'))    return true;
@@ -341,9 +348,8 @@ function tryOpenGraph($) {
   const raw = priceEl.attr('content');
   if (!raw) return null;
   const currencyRaw = $('meta[property="product:price:currency"]').attr('content') ?? '';
-  const parsed = parsePrice(raw.trim());
+  const parsed = parsePrice(raw.trim(), currencyRaw);
   if (!parsed) return null;
-  if (currencyRaw) parsed.currency = currencyRaw.toUpperCase();
   return { price: parsed.value, currency: parsed.currency };
 }
 
@@ -419,9 +425,10 @@ function notify(notifId, title, body, openUrl) {
       '--button1', 'Open',
       '--button1-action', `am start -a android.intent.action.VIEW -d "${openUrl}"`,
     ], { timeout: 8000 });
-  } catch {
-    // termux-notification not available (desktop testing) — just print
-    log(`  [NOTIFY] ${title}: ${content}`);
+    return true;
+  } catch (err) {
+    log(`  ERROR: Android notification failed (${err.code ?? err.status ?? 'unknown'}); will retry on a later check.`);
+    return false;
   }
 }
 
@@ -458,10 +465,20 @@ function loadState() {
 }
 
 function saveState(state) {
-  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  const temporary = `${STATE_FILE}.${process.pid}.tmp`;
+  writeFileSync(temporary, JSON.stringify(state, null, 2), 'utf8');
+  renameSync(temporary, STATE_FILE);
 }
 
 // ── Product list loading ──────────────────────────────────────────────────────
+
+function validateProductList(exported) {
+  if (!exported || typeof exported !== 'object' || !Array.isArray(exported.products)) throw new Error('Invalid product list: expected a Termux export with a products array. Re-export or sync from PriceWatch.');
+  for (const product of exported.products) {
+    if (!product || typeof product.id !== 'string' || typeof product.url !== 'string' || typeof product.enabled !== 'boolean') throw new Error('Invalid product entry: re-export or sync from PriceWatch.');
+  }
+  return exported.products;
+}
 
 async function loadProducts() {
   const config = loadConfig();
@@ -469,9 +486,10 @@ async function loadProducts() {
   if (config.gistId && config.gistToken) {
     try {
       const exported = await downloadFromGist(config.gistId, config.gistToken);
-      log(`Loaded ${exported.products?.length ?? 0} product(s) from Gist (${config.gistId.slice(0, 8)}…)`);
+      const products = validateProductList(exported);
+      log(`Loaded ${products.length} product(s) from Gist (${config.gistId.slice(0, 8)}…)`);
       writeFileSync(PRODUCTS_FILE, JSON.stringify(exported, null, 2), 'utf8');
-      return exported.products ?? [];
+      return products;
     } catch (err) {
       log(`Gist download failed: ${err.message} — falling back to local file`);
     }
@@ -481,16 +499,17 @@ async function loadProducts() {
     log('ERROR: pricewatch.json not found and no Gist configured.');
     log('Run setup.sh --gist-id <id> --gist-token <token>');
     log('or export manually: PriceWatch extension → Options → Export for Termux');
-    process.exit(1);
+    throw new Error('No valid companion product list is available.');
   }
 
   try {
     const exported = JSON.parse(readFileSync(PRODUCTS_FILE, 'utf8'));
-    log(`Loaded ${exported.products?.length ?? 0} product(s) from local file`);
-    return exported.products ?? [];
+    const products = validateProductList(exported);
+    log(`Loaded ${products.length} product(s) from local file`);
+    return products;
   } catch (err) {
     log(`ERROR: Could not parse pricewatch.json — ${err.message}`);
-    process.exit(1);
+    throw new Error('No valid companion product list is available.');
   }
 }
 
@@ -499,7 +518,7 @@ async function loadProducts() {
 function buildNotification(product, price, currency, prev) {
   const formatted = formatPrice(price, currency);
 
-  if (product.targetPrice != null && price <= product.targetPrice) {
+  if (product.targetPrice != null && price < product.targetPrice) {
     const target = formatPrice(product.targetPrice, currency);
     return `${formatted} — below your target of ${target}`;
   }
@@ -519,13 +538,13 @@ async function checkOneProduct(product, state) {
     html = await fetchHtml(product.url);
   } catch (err) {
     log(`    ERROR: ${err.message}`);
-    return;
+    return false;
   }
 
   const $ = cheerio.load(html);
 
   const result = extractPrice($, product.priceSelector ?? null);
-  if (!result) { log(`    no price found`); return; }
+  if (!result) { log(`    ERROR: no price found (page may require JavaScript or a new selector)`); return false; }
 
   const { price, currency: detected, strategy } = result;
   const currency  = detected ?? product.currency ?? 'USD';
@@ -538,60 +557,82 @@ async function checkOneProduct(product, state) {
   const prev = state[product.id] ?? {};
   const now  = new Date().toISOString();
 
-  // Back-in-stock notification (was OOS last run, now available)
-  if (inStock === true && prev.inStock === false) {
-    notify(`${product.id}_stock`, product.name, `Back in stock! Now ${formatted}`, product.url);
-    log(`    back in stock — notified!`);
+  const reference = product.referenceCurrency ?? product.currency ?? 'USD';
+  if (currency !== reference) {
+    state[product.id] = { ...prev, lastChecked: now, detectedCurrency: currency, currencyMismatch: true };
+    log(`    Not compared: ${currency} price does not match watch currency ${reference}.`);
+    return true;
   }
+  const next = { ...prev, lastPrice: price, lastChecked: now, inStock, currency, currencyMismatch: false };
+  const belowTarget = product.targetPrice != null && price < product.targetPrice;
+  if (inStock === true && belowTarget && (prev.inStock === false || prev.pendingStockAlert)) {
+    const delivered = notify(`${product.id}_stock`, product.name, `Back in stock! Now ${formatted}`, product.url);
+    if (delivered) { delete next.pendingStockAlert; log('    back in stock — notified!'); }
+    else next.pendingStockAlert = true;
+  } else if (inStock === false || !belowTarget) delete next.pendingStockAlert;
 
-  // Price-drop notification — skip when confirmed out of stock
+  // Keep the pre-drop baseline until delivery succeeds, so a failed no-target
+  // alert is still eligible when the same price is observed on the next run.
+  const baseline = prev.pendingPriceDrop ?? prev.lastPrice;
   if (inStock !== false) {
-    const notifBody = buildNotification(product, price, currency, prev);
+    const notifBody = buildNotification(product, price, currency, { ...prev, lastPrice: baseline });
     if (notifBody) {
-      const cooldownMs     = (product.intervalMinutes ?? 30) * 2 * 60 * 1000;
+      const cooldownMs = (product.intervalMinutes ?? 30) * 2 * 60 * 1000;
       const lastNotifiedAt = prev.lastNotified ? new Date(prev.lastNotified).getTime() : 0;
       if (Date.now() - lastNotifiedAt >= cooldownMs) {
-        notify(product.id, product.name, notifBody, product.url);
-        state[product.id] = { lastPrice: price, lastChecked: now, lastNotified: now, inStock };
-        log(`    notified!`);
+        if (notify(product.id, product.name, notifBody, product.url)) {
+          next.lastNotified = now; delete next.pendingPriceDrop; log('    notified!');
+        } else if (product.targetPrice == null) next.pendingPriceDrop = baseline;
       } else {
-        log(`    below target — cooldown active`);
-        state[product.id] = { ...prev, lastPrice: price, lastChecked: now, inStock };
+        if (product.targetPrice == null) next.pendingPriceDrop = baseline;
+        log('    alert eligible — cooldown active');
       }
-    } else {
-      state[product.id] = { ...prev, lastPrice: price, lastChecked: now, inStock };
-    }
-  } else {
-    // Out of stock — track price/stock but don't fire price-drop notification
-    state[product.id] = { ...prev, lastPrice: price, lastChecked: now, inStock };
+    } else delete next.pendingPriceDrop;
   }
+  state[product.id] = next;
+  return true;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const all      = await loadProducts();
-  const products = all.filter((p) => p.enabled);
+  const all = await loadProducts();
+  if (!Array.isArray(all)) throw new Error('Invalid product data: products must be an array. Re-export from PriceWatch.');
+  const products = all.filter((p) => p && p.enabled === true);
 
-  if (products.length === 0) { log('No enabled products to check.'); return; }
+  if (products.length === 0) {
+    log(all.length ? `No active products: all ${all.length} saved product(s) are paused.` : 'No products saved. Export for Termux or sync your watchlist first.');
+    log(`Done. BELOW_TARGET=0 TOTAL=0 FAILED=0 SAVED=${all.length}`);
+    return;
+  }
 
   const state = loadState();
   log(`Checking ${products.length} product(s)…`);
 
   let belowTarget = 0;
+  let failed = 0;
   for (const product of products) {
-    await checkOneProduct(product, state);
+    let succeeded = false;
+    try { succeeded = await checkOneProduct(product, state); }
+    catch (err) { log(`    ERROR: product check failed (${err.message})`); }
+    if (!succeeded) failed++;
     const s = state[product.id];
-    if (s && product.targetPrice != null && s.lastPrice != null && s.lastPrice <= product.targetPrice && s.inStock !== false) {
+    if (succeeded && s && !s.currencyMismatch && product.targetPrice != null && s.lastPrice != null && s.lastPrice <= product.targetPrice && s.inStock !== false) {
       belowTarget++;
     }
+    // Preserve completed observations even if Android kills a later check.
+    saveState(state);
   }
 
-  saveState(state);
-  log(`Done. BELOW_TARGET=${belowTarget} TOTAL=${products.length}`);
+  log(`Done. BELOW_TARGET=${belowTarget} TOTAL=${products.length} FAILED=${failed} SAVED=${all.length}`);
+  if (failed) process.exitCode = 1;
 }
 
-main().catch((err) => {
-  log(`FATAL: ${err.message}`);
-  process.exit(1);
-});
+export { extractPrice, checkOneProduct, main };
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((err) => {
+    log(`FATAL: ${err.message}`);
+    process.exitCode = 1;
+  });
+}

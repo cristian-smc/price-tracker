@@ -7,6 +7,12 @@
 import { parsePrice, formatPrice } from '../../src/shared/currency.js';
 
 describe('parsePrice', () => {
+  test('currency hints determine units without overriding explicit tokens', () => {
+    expect(parsePrice('15000', 'JPY')).toEqual({ value: 15000, currency: 'JPY' });
+    expect(parsePrice('12900', 'KRW')).toEqual({ value: 12900, currency: 'KRW' });
+    expect(parsePrice('29,99', 'EUR')).toEqual({ value: 2999, currency: 'EUR' });
+    expect(parsePrice('$29.99', 'JPY')).toEqual({ value: 2999, currency: 'USD' });
+  });
   // --- USD dot-decimal ---
   test('$1,299.99 → 129999 USD', () => {
     expect(parsePrice('$1,299.99')).toEqual({ value: 129999, currency: 'USD' });

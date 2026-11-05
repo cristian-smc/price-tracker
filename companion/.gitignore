@@ -1,0 +1,10 @@
+# Phone-only runtime data and credentials; never overwrite these via Git updates.
+config.json
+pricewatch.json
+state.json
+state.json.*.tmp
+check.log
+update.log
+.operation.lock
+.update-stage.*/
+node_modules/

@@ -27,7 +27,7 @@ async function ensureOffscreen() {
       if (!existing) {
         await chrome.offscreen.createDocument({
           url: OFFSCREEN_URL,
-          reasons: [OFFSCREEN_REASON],
+          reasons: [OFFSCREEN_REASON, 'BLOBS'],
           justification: 'Parse product page HTML with DOMParser to extract prices',
         });
       }
@@ -37,14 +37,14 @@ async function ensureOffscreen() {
   await offscreenCreating;
 }
 
-async function parseWithOffscreen(html, url, userSelector) {
+export async function offscreenRequest(type, data) {
   await ensureOffscreen();
-  return chrome.runtime.sendMessage({
-    type: 'PARSE_HTML',
-    html,
-    url,
-    userSelector: userSelector ?? null,
-  });
+  const response = await chrome.runtime.sendMessage({ target: 'offscreen', type, ...data });
+  if (!response || response.error) throw new Error(response?.error || 'The page parser did not respond.');
+  return response;
+}
+async function parseWithOffscreen(html, url, userSelector) {
+  return offscreenRequest('PARSE_HTML', { html, url, userSelector: userSelector ?? null });
 }
 
 function looksLikeSpa(html) {

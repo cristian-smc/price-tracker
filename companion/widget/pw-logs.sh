@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-COMPANION_DIR="$HOME/price-tracker/companion"
+COMPANION_DIR="${PRICEWATCH_COMPANION_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 LOG_FILE="$COMPANION_DIR/check.log"
 
 if [[ ! -f "$LOG_FILE" ]]; then

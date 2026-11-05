@@ -1,22 +1,13 @@
 #!/data/data/com.termux/files/usr/bin/bash
-COMPANION_DIR="$HOME/price-tracker/companion"
-REPO_DIR="$HOME/price-tracker"
-
-termux-notification --id 43 --title "PriceWatch Update" --content "Pulling latest code..." --icon "cloud_download" --ongoing
-
-if ! cd "$REPO_DIR" || ! git pull --ff-only >> "$COMPANION_DIR/check.log" 2>&1; then
-  termux-notification --id 43 --title "PriceWatch Update" --content "git pull failed - see check.log" --icon "error"
-  exit 0
+COMPANION_DIR="${PRICEWATCH_COMPANION_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+termux-notification --id 43 --title "PriceWatch Update" --content "Checking for updates..." --icon "cloud_download" --ongoing
+bash "$COMPANION_DIR/update.sh" >> "$COMPANION_DIR/update.log" 2>&1
+STATUS=$?
+if [[ "$STATUS" -eq 0 ]]; then
+  termux-notification --id 43 --title "PriceWatch Update" --content "Update complete - your data was preserved" --icon "check_circle"
+elif [[ "$STATUS" -eq 75 ]]; then
+  termux-notification --id 43 --title "PriceWatch Update" --content "A check or update is already running. Try again later." --icon "info"
+else
+  termux-notification --id 43 --title "PriceWatch Update" --content "Update failed - see companion/update.log" --icon "error"
 fi
-
-termux-notification --id 43 --title "PriceWatch Update" --content "Installing dependencies..." --icon "cloud_download" --ongoing
-cd "$COMPANION_DIR" && npm install --silent >> check.log 2>&1
-
-cp "$COMPANION_DIR/widget/"*.sh ~/.shortcuts/tasks/
-chmod +x ~/.shortcuts/tasks/*.sh
-
-pkill crond 2>/dev/null; sleep 1; crond
-
-termux-notification --id 43 --title "PriceWatch Update" --content "Updated - crond restarted" --icon "check_circle"
-
-exit 0
+exit "$STATUS"

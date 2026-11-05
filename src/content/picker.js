@@ -12,6 +12,8 @@
 (function () {
   if (window.__priceWatchPickerActive) return;
   window.__priceWatchPickerActive = true;
+  const repairToken = window.__priceWatchRepairToken ?? null;
+  delete window.__priceWatchRepairToken;
 
   // ── Overlay element ───────────────────────────────────────────────────────
   const overlay = document.createElement('div');
@@ -87,9 +89,10 @@
       }
 
       // Prefer data-testid / data-test / itemprop
-      const dataTestId = current.getAttribute('data-testid') || current.getAttribute('data-test');
+      const testAttribute = current.hasAttribute('data-testid') ? 'data-testid' : 'data-test';
+      const dataTestId = current.getAttribute(testAttribute);
       if (dataTestId) {
-        part = `${part}[data-testid="${CSS.escape(dataTestId)}"]`;
+        part = `${part}[${testAttribute}="${CSS.escape(dataTestId)}"]`;
         parts.unshift(part);
         break;
       }
@@ -140,13 +143,15 @@
     const selector = buildSelector(currentTarget);
     cleanup();
 
-    chrome.runtime.sendMessage({ type: 'PICKER_RESULT', selector });
+    chrome.runtime.sendMessage({ type: 'PICKER_RESULT', selector, repairToken }).then((response) => {
+      if (response?.error) window.alert(response.error);
+    }).catch((err) => window.alert(`Could not save selector: ${err.message}`));
   }
 
   function onKeyDown(e) {
     if (e.key === 'Escape') {
       cleanup();
-      chrome.runtime.sendMessage({ type: 'PICKER_RESULT', selector: null, cancelled: true });
+      chrome.runtime.sendMessage({ type: 'PICKER_RESULT', selector: null, cancelled: true, repairToken }).catch(() => {});
     }
   }
 

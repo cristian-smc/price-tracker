@@ -196,7 +196,7 @@ function extractCurrency(s) {
  * @param {string} raw
  * @returns {{ value: number, currency: string }|null}
  */
-export function parsePrice(raw) {
+export function parsePrice(raw, currencyHint = null) {
   if (!raw || typeof raw !== 'string') return null;
 
   // Handle was/now markup (<del>/<ins>)
@@ -205,17 +205,17 @@ export function parsePrice(raw) {
   // Strip any remaining HTML
   str = stripHtml(str);
 
-  return parsePriceStr(str);
+  return parsePriceStr(str, currencyHint);
 }
 
 /** Internal: parse a clean (HTML-stripped) price string. */
-function parsePriceStr(str) {
+function parsePriceStr(str, currencyHint) {
   // Handle price ranges — take lower value
   if (/\d\s*[–—]\s*\d/.test(str)) {
     const parts = str.split(/\s*[–—]\s*/);
     if (parts.length === 2) {
-      const a = parsePriceStr(parts[0]);
-      const b = parsePriceStr(parts[1]);
+      const a = parsePriceStr(parts[0], currencyHint);
+      const b = parsePriceStr(parts[1], currencyHint);
       if (a && b) return a.value <= b.value ? a : b;
       return a || b;
     }
@@ -225,7 +225,10 @@ function parsePriceStr(str) {
 
   // Detect the currency symbol/code before stripping filler words, so that a
   // leading ISO code (e.g. "EUR 19.99") isn't consumed by the filler-word strip.
-  const { currency, remainder: afterCurrency } = extractCurrency(str);
+  const detected = extractCurrency(str);
+  const hint = typeof currencyHint === 'string' ? currencyHint.trim().toUpperCase() : null;
+  const currency = detected.remainder !== str || !/^[A-Z]{3}$/.test(hint ?? '') ? detected.currency : hint;
+  const afterCurrency = detected.remainder;
 
   // Strip leading non-price words ("from", "Sale", "Was:", "Only", etc.)
   let remainder = afterCurrency.replace(/^[a-z\s]+(?=\d)/i, '');

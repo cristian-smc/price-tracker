@@ -12,6 +12,9 @@
  *   currency: string|null,
  *   thumbnail: string|null,
  *   lastChecked: number|null,
+ *   lastObserved?: number|null,
+ *   checkStatus?: 'ok'|'no_price'|'error'|'currency_mismatch',
+ *   lastError?: string|null,
  *   consecutiveErrors: number,
  *   consecutiveNulls: number,
  * }} Source
@@ -25,6 +28,11 @@
  *   targetPrice: number|null,
  *   sellThreshold: number|null,
  *   currency: string,
+ *   referenceCurrency?: string|null,
+ *   statsCurrency?: string|null,
+ *   group?: string,
+ *   tags?: string[],
+ *   disabledReason?: 'errors'|null,
  *   intervalMinutes: number,
  *   enabled: boolean,
  *   notificationEnabled: boolean,
@@ -38,6 +46,9 @@
  *   lowestPrice: number|null,
  *   highestPrice: number|null,
  *   lastChecked: number|null,
+ *   lastObserved?: number|null,
+ *   checkStatus?: 'ok'|'no_price'|'error'|'currency_mismatch',
+ *   lastError?: string|null,
  *   lastNotified: number|null,
  *   consecutiveErrors: number,
  *   consecutiveNulls: number,
@@ -45,7 +56,7 @@
  *   createdAt: number
  * }} Product
  *
- * @typedef {{ ts: number, price: number }} HistoryPoint
+ * @typedef {{ ts: number, price: number, currency?: string }} HistoryPoint
  *
  * @typedef {{
  *   defaultInterval: number,

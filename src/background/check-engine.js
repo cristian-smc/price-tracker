@@ -6,7 +6,7 @@
  * Legacy products (no sources array) are migrated lazily on first check.
  */
 
-import { getProduct, saveProduct } from '../shared/storage.js';
+import { getProduct, saveProduct, withMutation, getDataGeneration } from '../shared/storage.js';
 import { fetchAndExtract } from './fetcher.js';
 import { tabFetchAndExtract } from './tab-fetcher.js';
 import { recordObservation } from './history-manager.js';
@@ -14,64 +14,94 @@ import { maybeNotify } from './notifier.js';
 import { updateBadge } from './badge-manager.js';
 import { generateId } from '../shared/utils.js';
 import { DRIFT_STRIKE_LIMIT, AUTO_DISABLE_ERROR_LIMIT } from '../shared/constants.js';
+import { referenceCurrency, normalizeCurrency } from '../shared/product-state.js';
+
+const inFlight = new Map();
 
 export async function checkProduct(productId) {
-  let product = await getProduct(productId);
-  if (product?.enabled !== true) return;
+  const generation = getDataGeneration();
+  const product = await getProduct(productId);
+  if (!product?.enabled) return;
+  const key = `${generation}:${productId}`;
+  const config = extractionConfig(product);
+  const existing = inFlight.get(key);
+  if (existing) {
+    if (existing.config === config) return existing.promise;
+    // Source edits need a successor, not the old check whose result is discarded.
+    await existing.promise.catch(() => {});
+    return checkProduct(productId);
+  }
+  const checking = runCheck(productId, generation).finally(() => inFlight.delete(key));
+  inFlight.set(key, { config, promise: checking });
+  return checking;
+}
 
-  // Lazy migration: wrap single URL into sources array
-  product = ensureSources(product);
+function extractionConfig(product) {
+  const sources = product.sources?.length ? product.sources : [{
+    url: product.url, selectors: product.selectors, requiresTabExtraction: product.requiresTabExtraction,
+  }];
+  return JSON.stringify({ reference: referenceCurrency(product), sources: sources.map((s) => ({
+    id: s.id ?? null, url: s.url, selector: s.selectors?.price ?? null,
+    requiresTabExtraction: s.requiresTabExtraction ?? false,
+  })) });
+}
 
-  const previousPrice  = product.currentPrice;
-  const previousInStock = product.inStock ?? null;
-
-  // Check every source
+async function runCheck(productId, generation) {
+  const original = await getProduct(productId);
+  if (original?.enabled !== true) return;
+  const config = extractionConfig(original);
+  const product = ensureSources(original);
   const updatedSources = [];
-  let anySucceeded = false;
-  for (const source of product.sources) {
-    const updated = await checkOneSource(source);
-    updatedSources.push(updated);
-    if (updated.consecutiveErrors === 0) anySucceeded = true;
+  for (const source of product.sources) updatedSources.push(await checkOneSource(source));
+  const anySucceeded = updatedSources.some((s) => s.checkStatus === 'ok');
+
+  const accepted = await withMutation(async () => {
+    const current = await getProduct(productId);
+    if (generation !== getDataGeneration() || !current?.enabled || extractionConfig(current) !== config) return null;
+    let reference = referenceCurrency(current);
+    if (!current.referenceCurrency && current.currentPrice == null && current.targetPrice == null &&
+        current.sellThreshold == null && current.initialPrice == null && updatedSources[0]?.checkStatus === 'ok') {
+      reference = normalizeCurrency(updatedSources[0].currency) ?? reference;
+    }
+    const bestSource = pickBestSource(updatedSources, reference);
+    if (!bestSource) {
+      const allErrored = updatedSources.every((s) => s.checkStatus === 'error');
+      const consecutiveErrors = allErrored ? (current.consecutiveErrors ?? 0) + 1 : 0;
+      const disabled = consecutiveErrors >= AUTO_DISABLE_ERROR_LIMIT;
+      await saveProduct({ ...current, referenceCurrency: current.referenceCurrency ?? (current.currentPrice != null || current.targetPrice != null || current.sellThreshold != null ? reference : null), sources: updatedSources, bestSourceId: null,
+        consecutiveErrors, enabled: !disabled, disabledReason: disabled ? 'errors' : null,
+        checkStatus: anySucceeded ? 'currency_mismatch' : allErrored ? 'error' : 'no_price',
+        lastError: allErrored ? updatedSources[0]?.lastError : null, lastChecked: Date.now() });
+      return null;
+    }
+    const newPrice = bestSource.currentPrice;
+    const baseline = current.statsCurrency === reference ? current : { ...current, initialPrice: null, lowestPrice: null, highestPrice: null };
+    const updated = { ...current, sources: updatedSources, referenceCurrency: reference,
+      bestSourceId: bestSource.id, url: updatedSources[0]?.url ?? current.url,
+      canonicalUrl: bestSource.canonicalUrl ?? current.canonicalUrl,
+      currentPrice: newPrice, currency: reference, statsCurrency: reference,
+      thumbnail: bestSource.thumbnail ?? current.thumbnail, inStock: bestSource.inStock ?? null,
+      lastChecked: Date.now(), lastObserved: bestSource.lastObserved, checkStatus: 'ok', lastError: null,
+      disabledReason: null, consecutiveErrors: 0, consecutiveNulls: 0,
+      ...computePriceFields(baseline, newPrice) };
+    await saveProduct(updated);
+    await recordObservation(productId, { price: newPrice, currency: reference });
+    return { product: updated, previousPrice: current.currentPrice, previousInStock: current.inStock ?? null };
+  });
+
+  if (accepted && generation === getDataGeneration()) {
+    const current = await getProduct(productId);
+    if (current?.enabled && current.lastChecked === accepted.product.lastChecked &&
+        extractionConfig(current) === extractionConfig(accepted.product)) {
+      const notifId = await maybeNotify(current, accepted.previousPrice, accepted.previousInStock, (latest) =>
+        generation === getDataGeneration() && latest.lastChecked === accepted.product.lastChecked &&
+        extractionConfig(latest) === extractionConfig(accepted.product));
+      if (notifId) await withMutation(async () => {
+        const latest = await getProduct(productId);
+        if (latest && generation === getDataGeneration()) await saveProduct({ ...latest, lastNotified: Date.now() });
+      });
+    }
   }
-
-  if (!anySucceeded) {
-    const consecutiveErrors = (product.consecutiveErrors ?? 0) + 1;
-    await saveProduct({
-      ...product,
-      sources: updatedSources,
-      consecutiveErrors,
-      enabled: consecutiveErrors >= AUTO_DISABLE_ERROR_LIMIT ? false : product.enabled,
-      lastChecked: Date.now(),
-    });
-    await updateBadge();
-    return;
-  }
-
-  const bestSource = pickBestSource(updatedSources);
-  const newPrice = bestSource?.currentPrice ?? product.currentPrice;
-  const priceFields = computePriceFields(product, newPrice);
-
-  const updatedProduct = {
-    ...product,
-    sources: updatedSources,
-    bestSourceId: bestSource?.id ?? null,
-    url: updatedSources[0]?.url ?? product.url,
-    canonicalUrl: bestSource?.canonicalUrl ?? product.canonicalUrl,
-    currentPrice: newPrice,
-    currency: bestSource?.currency ?? product.currency,
-    thumbnail: bestSource?.thumbnail ?? product.thumbnail,
-    inStock: bestSource?.inStock ?? null,
-    lastChecked: Date.now(),
-    consecutiveErrors: 0,
-    consecutiveNulls: 0,
-    ...priceFields,
-  };
-
-  await maybeRecord(productId, updatedProduct.currentPrice);
-  const notifId = await maybeNotify(updatedProduct, previousPrice, previousInStock);
-  if (notifId) updatedProduct.lastNotified = Date.now();
-
-  await saveProduct(updatedProduct);
   await updateBadge();
 }
 
@@ -121,7 +151,7 @@ async function checkOneSource(source) {
     return {
       ...source,
       consecutiveErrors: (source.consecutiveErrors ?? 0) + 1,
-      lastChecked: Date.now(),
+      lastChecked: Date.now(), checkStatus: 'error', lastError: String(result.error).slice(0, 160),
     };
   }
 
@@ -133,10 +163,12 @@ async function checkOneSource(source) {
     selectors,
     requiresTabExtraction: result.requiresTabExtraction ?? source.requiresTabExtraction,
     currentPrice: result.price ?? source.currentPrice,
-    currency: result.currency ?? source.currency,
+    currency: result.price != null ? normalizeCurrency(result.currency) : source.currency,
     thumbnail: result.thumbnail ?? source.thumbnail,
     inStock: result.inStock ?? null,
     lastChecked: Date.now(),
+    lastObserved: result.price != null ? Date.now() : source.lastObserved ?? null,
+    checkStatus: result.price != null ? 'ok' : 'no_price', lastError: null,
     consecutiveErrors: 0,
     consecutiveNulls,
   };
@@ -189,9 +221,9 @@ function resolveSelectorsForSource(source, result) {
 
 // ── Best source selection ─────────────────────────────────────────────────────
 
-function pickBestSource(sources) {
-  const withPrice = sources.filter((s) => s.currentPrice != null && s.consecutiveErrors === 0);
-  if (withPrice.length === 0) return sources[0] ?? null;
+function pickBestSource(sources, reference) {
+  const withPrice = sources.filter((s) => s.currentPrice != null && s.checkStatus === 'ok' && normalizeCurrency(s.currency) === reference);
+  if (withPrice.length === 0) return null;
 
   const lowest = (arr) => arr.reduce((best, s) => s.currentPrice < best.currentPrice ? s : best);
 

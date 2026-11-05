@@ -4,7 +4,9 @@
  *           pause-all / resume-all.
  */
 
-import { displayPrice, createWarningBadge } from '../components/currency-badge.js';
+import { displayPrice } from '../components/currency-badge.js';
+import { trackingHealth, referenceCurrency, compareWatchPrices, isComparablePrice } from '../../shared/product-state.js';
+import { isBelowTarget } from '../../shared/utils.js';
 
 /**
  * @param {Record<string, import('../../shared/types').Product>} products
@@ -19,8 +21,8 @@ import { displayPrice, createWarningBadge } from '../components/currency-badge.j
  * }} handlers
  */
 export function renderProductList(products, {
-  onSelect, onAdd, onPauseAll, onResumeAll, onCheckAll, onReorder,
-  sortBy = 'created', filterBy = 'all',
+  onSelect, onAdd, onDelete, onRepair, onPauseAll, onResumeAll, onCheckAll, onReorder,
+  sortBy = 'created', filterBy = 'all', searchQuery = '', groupBy = '', tagBy = '', onStateChange,
 }) {
   const entries = Object.values(products);
 
@@ -47,6 +49,7 @@ export function renderProductList(products, {
 
   const searchInput = document.createElement('input');
   searchInput.type = 'search';
+  searchInput.value = searchQuery;
   searchInput.placeholder = 'Search…';
   searchInput.setAttribute('aria-label', 'Search products');
 
@@ -61,16 +64,35 @@ export function renderProductList(products, {
 
   const filterSelect = document.createElement('select');
   filterSelect.setAttribute('aria-label', 'Filter');
-  for (const [val, label] of [['all','All'],['active','Active'],['paused','Paused'],['drop','Below target']]) {
+  for (const [val, label] of [['all','All'],['active','Active'],['paused','Paused'],['drop','Below target'],['health','Needs attention']]) {
     const opt = document.createElement('option');
     opt.value = val; opt.textContent = label;
     if (val === filterBy) opt.selected = true;
     filterSelect.appendChild(opt);
   }
 
-  searchBar.appendChild(searchInput);
-  searchBar.appendChild(sortSelect);
-  searchBar.appendChild(filterSelect);
+  const groupSelect = document.createElement('select'); groupSelect.setAttribute('aria-label', 'Filter by group');
+  const tagSelect = document.createElement('select'); tagSelect.setAttribute('aria-label', 'Filter by tag');
+  for (const [select, values, chosen, label] of [
+    [groupSelect, [...new Set(entries.map((p) => p.group).filter(Boolean))].sort(), groupBy, 'All groups'],
+    [tagSelect, [...new Set(entries.flatMap((p) => p.tags ?? []))].sort(), tagBy, 'All tags'],
+  ]) {
+    const all = document.createElement('option'); all.value = ''; all.textContent = label; select.appendChild(all);
+    for (const value of values) { const option = document.createElement('option'); option.value = value; option.textContent = value; select.appendChild(option); }
+    select.value = values.includes(chosen) ? chosen : '';
+    select.className = 'organization-filter';
+    select.hidden = values.length === 0;
+  }
+  const filters = document.createElement('div'); filters.className = 'filter-controls';
+  filters.append(sortSelect, filterSelect);
+  const organizationFilters = document.createElement('div'); organizationFilters.className = 'organization-controls';
+  organizationFilters.hidden = groupSelect.hidden && tagSelect.hidden;
+  organizationFilters.append(groupSelect, tagSelect);
+  const activeFilters = document.createElement('div'); activeFilters.className = 'active-filters';
+  const reset = document.createElement('button'); reset.type = 'button'; reset.className = 'filter-reset'; reset.textContent = 'Clear filters';
+  reset.addEventListener('click', () => { searchInput.value = ''; filterSelect.value = 'all'; groupSelect.value = ''; tagSelect.value = ''; changed(); });
+  activeFilters.appendChild(reset);
+  searchBar.append(searchInput, filters, organizationFilters, activeFilters);
   wrap.appendChild(searchBar);
 
   // ── Toolbar ────────────────────────────────────────────────────────────────
@@ -81,25 +103,32 @@ export function renderProductList(products, {
   pauseAllBtn.className = 'btn-sm';
   pauseAllBtn.type = 'button';
   pauseAllBtn.textContent = 'Pause all';
-  pauseAllBtn.addEventListener('click', onPauseAll);
+  pauseAllBtn.addEventListener('click', () => runAction(pauseAllBtn, onPauseAll, 'Pausing…'));
 
   const resumeAllBtn = document.createElement('button');
   resumeAllBtn.className = 'btn-sm';
   resumeAllBtn.type = 'button';
   resumeAllBtn.textContent = 'Resume all';
-  resumeAllBtn.addEventListener('click', onResumeAll);
+  resumeAllBtn.addEventListener('click', () => runAction(resumeAllBtn, onResumeAll, 'Resuming…'));
 
   const checkAllBtn = document.createElement('button');
   checkAllBtn.className = 'btn-sm';
   checkAllBtn.type = 'button';
   checkAllBtn.textContent = 'Check all';
-  checkAllBtn.addEventListener('click', async () => {
-    checkAllBtn.disabled = true;
-    checkAllBtn.textContent = 'Checking…';
-    await onCheckAll();
-    checkAllBtn.textContent = 'Check all';
-    checkAllBtn.disabled = false;
-  });
+  const status = document.createElement('div');
+  status.className = 'action-status';
+  status.setAttribute('aria-live', 'polite');
+  wrap.appendChild(status);
+  async function runAction(button, action, pending) {
+    const label = button.textContent;
+    const controls = [pauseAllBtn, resumeAllBtn, checkAllBtn];
+    controls.forEach((b) => { b.disabled = true; });
+    button.textContent = pending; status.textContent = ''; status.removeAttribute('role');
+    try { await action(); status.textContent = 'Done.'; }
+    catch (err) { status.setAttribute('role', 'alert'); status.textContent = err.message || 'Action failed. Please try again.'; }
+    finally { controls.forEach((b) => { b.disabled = false; }); button.textContent = label; }
+  }
+  checkAllBtn.addEventListener('click', () => runAction(checkAllBtn, onCheckAll, 'Checking…'));
 
   const spacer = document.createElement('div');
   spacer.className = 'spacer';
@@ -123,46 +152,69 @@ export function renderProductList(products, {
     const query = searchInput.value.toLowerCase();
     const sort  = sortSelect.value;
     const filter = filterSelect.value;
+    activeFilters.hidden = !query && filter === 'all' && !groupSelect.value && !tagSelect.value;
+    reset.textContent = 'Clear filters: ' + [groupSelect.value, tagSelect.value, query ? `“${searchInput.value}”` : '', filter !== 'all' ? filterSelect.selectedOptions[0].textContent : ''].filter(Boolean).join(' · ');
 
     let filtered = entries.filter((p) => {
-      if (query && !p.name.toLowerCase().includes(query) && !p.url.toLowerCase().includes(query)) return false;
+      if (query && ![p.name, p.url, p.group, ...(p.tags ?? [])].filter(Boolean).join(' ').toLowerCase().includes(query)) return false;
+      if (groupSelect.value && p.group !== groupSelect.value) return false;
+      if (tagSelect.value && !(p.tags ?? []).includes(tagSelect.value)) return false;
       if (filter === 'active') return p.enabled;
       if (filter === 'paused') return !p.enabled;
-      if (filter === 'drop') return p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice;
+      if (filter === 'drop') return isBelowTarget(p);
+      if (filter === 'health') return ['repair', 'stale', 'mismatch', 'unknown'].includes(trackingHealth(p, p.intervalMinutes, p.enabled).state);
       return true;
     });
 
     filtered.sort((a, b) => {
+      const targetPriority = Number(isBelowTarget(b)) - Number(isBelowTarget(a));
+      if (targetPriority) return targetPriority;
       if (sort === 'name') return a.name.localeCompare(b.name);
-      if (sort === 'price') return (a.currentPrice ?? Infinity) - (b.currentPrice ?? Infinity);
+      if (sort === 'price') return compareWatchPrices(a, b);
       if (sort === 'last_checked') return (b.lastChecked ?? 0) - (a.lastChecked ?? 0);
       if (sort === 'manual') return (b.sortOrder ?? b.createdAt) - (a.sortOrder ?? a.createdAt);
       return b.createdAt - a.createdAt; // default: newest first
     });
 
     for (const p of filtered) {
-      list.appendChild(buildCard(p, onSelect, onReorder));
+      list.appendChild(buildCard(p, onSelect, onReorder, onDelete, onRepair));
+    }
+    if (!filtered.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      const message = document.createElement('p');
+      message.textContent = 'No matching products';
+      const clear = document.createElement('button');
+      clear.type = 'button'; clear.className = 'btn btn-secondary'; clear.textContent = 'Clear filters';
+      clear.addEventListener('click', () => reset.click());
+      empty.append(message, clear); list.appendChild(empty);
     }
   };
 
-  searchInput.addEventListener('input', renderList);
-  sortSelect.addEventListener('change', renderList);
-  filterSelect.addEventListener('change', renderList);
+  function changed() {
+    renderList();
+    onStateChange?.({ searchQuery: searchInput.value, sortBy: sortSelect.value, filterBy: filterSelect.value, groupBy: groupSelect.value, tagBy: tagSelect.value });
+  }
+  searchInput.addEventListener('input', changed);
+  sortSelect.addEventListener('change', changed);
+  filterSelect.addEventListener('change', changed);
+  groupSelect.addEventListener('change', changed); tagSelect.addEventListener('change', changed);
 
   renderList();
   return wrap;
 }
 
-function buildCard(p, onSelect, onReorder) {
+function buildCard(p, onSelect, onReorder, onDelete, onRepair) {
   const card = document.createElement('div');
   card.className = 'product-card' + (p.enabled ? '' : ' paused');
-  card.setAttribute('role', 'button');
-  card.setAttribute('tabindex', '0');
+  card.setAttribute('role', 'group');
+  card.setAttribute('aria-label', p.name);
   card.dataset.id = p.id;
   card.dataset.sortOrder = p.sortOrder ?? p.createdAt;
 
-  const inner = document.createElement('div');
-  inner.className = 'card-inner';
+  const inner = document.createElement('button');
+  inner.type = 'button'; inner.className = 'card-inner card-open';
+  inner.setAttribute('aria-label', `Open ${p.name}`);
 
   // Thumbnail → site favicon fallback → placeholder SVG
   const thumbImg = document.createElement('img');
@@ -188,8 +240,8 @@ function buildCard(p, onSelect, onReorder) {
   body.className = 'card-body';
 
   const checkStock = p.checkStockEnabled !== false;
-  const isPriceDrop = p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice && (checkStock ? p.inStock !== false : true);
-  const priceStr = displayPrice(p.currentPrice, p.currency);
+  const isPriceDrop = isBelowTarget(p);
+  const priceStr = displayPrice(p.currentPrice, referenceCurrency(p));
 
   // Row 1: name + price
   const row1 = document.createElement('div');
@@ -225,11 +277,38 @@ function buildCard(p, onSelect, onReorder) {
 
   card.appendChild(inner);
   card.appendChild(handle);
+  const health = trackingHealth(p, p.intervalMinutes, p.enabled);
+  if (onRepair && ['repair', 'stale', 'unknown'].includes(health.state)) {
+    const repair = document.createElement('button'); repair.type = 'button'; repair.className = 'card-repair'; repair.textContent = 'Repair selector';
+    repair.addEventListener('click', async (event) => {
+      event.stopPropagation(); repair.disabled = true;
+      try { await onRepair(p.id, p.sources?.[0]?.id ?? null); }
+      catch (err) { const error = document.createElement('span'); error.className = 'action-status'; error.setAttribute('role', 'alert'); error.textContent = err.message; card.appendChild(error); }
+      finally { repair.disabled = false; }
+    }); card.appendChild(repair);
+  }
+  if (onDelete) {
+    card.classList.add('has-delete');
+    const remove = document.createElement('button');
+    remove.type = 'button'; remove.className = 'card-delete'; remove.textContent = '×';
+    remove.title = 'Delete product'; remove.setAttribute('aria-label', `Delete ${p.name}`);
+    remove.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      if (!confirm(`Stop tracking "${p.name}"?`)) return;
+      remove.disabled = true;
+      try { await onDelete(p.id); }
+      catch (err) {
+        const alert = document.createElement('div'); alert.className = 'action-status'; alert.setAttribute('role', 'alert');
+        alert.textContent = err.message || 'Could not delete product. Please try again.'; card.appendChild(alert);
+      } finally { remove.disabled = false; }
+    });
+    card.appendChild(remove);
+  }
 
   // Click/keyboard to select
   const select = () => onSelect(p.id);
-  card.addEventListener('click', select);
-  card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') select(); });
+  inner.addEventListener('click', select);
+  inner.addEventListener('keydown', (e) => { if (e.key === ' ') { e.preventDefault(); select(); } });
 
   // Drag events for reordering
   card.addEventListener('dragstart', (e) => {
@@ -309,7 +388,7 @@ function makeThumbnailPlaceholder() {
 }
 
 function makePctBadge(p) {
-  if (p.initialPrice == null || p.currentPrice == null || p.initialPrice === 0) return null;
+  if (!isComparablePrice(p) || p.statsCurrency !== referenceCurrency(p) || p.initialPrice == null || p.currentPrice == null || p.initialPrice === 0) return null;
   const pct = ((p.currentPrice - p.initialPrice) / p.initialPrice) * 100;
   const badge = document.createElement('span');
   let pctClass = 'pct-same';
@@ -329,7 +408,7 @@ function makeRow2(p) {
   if (pctBadge) row2.appendChild(pctBadge);
 
   const checkStock = p.checkStockEnabled !== false;
-  const isPriceDrop = p.currentPrice !== null && p.targetPrice !== null && p.currentPrice < p.targetPrice && (checkStock ? p.inStock !== false : true);
+  const isPriceDrop = isBelowTarget(p);
   if (checkStock) {
     if (p.inStock === false) {
       const oos = document.createElement('span');
@@ -348,21 +427,19 @@ function makeRow2(p) {
   if (p.targetPrice !== null) {
     const target = document.createElement('span');
     target.title = 'Target price';
-    target.textContent = `↓ ${displayPrice(p.targetPrice, p.currency)}`;
+    target.textContent = `↓ ${displayPrice(p.targetPrice, referenceCurrency(p))}`;
     target.style.color = isPriceDrop ? 'var(--success)' : 'var(--text-muted)';
     row2.appendChild(target);
   }
 
-  if (p.lastChecked) {
-    const when = document.createElement('span');
-    when.textContent = formatRelativeTime(p.lastChecked);
-    row2.appendChild(when);
-  }
-
-  if (p.consecutiveErrors >= 3) {
-    row2.appendChild(createWarningBadge('error', p.consecutiveErrors));
-  } else if (p.consecutiveNulls >= 2) {
-    row2.appendChild(createWarningBadge('drift', p.consecutiveNulls));
+  const health = trackingHealth(p, p.intervalMinutes, p.enabled);
+  const badge = document.createElement('span'); badge.className = `badge health-${health.state}`; badge.textContent = health.label; badge.title = health.detail; row2.appendChild(badge);
+  const statusLine = document.createElement('span'); statusLine.className = 'card-status-line';
+  statusLine.appendChild(badge);
+  if (p.lastObserved) { const when = document.createElement('span'); when.className = 'observed-time'; when.textContent = `· ${formatRelativeTime(p.lastObserved)}`; when.title = `Last successful price observation: ${new Date(p.lastObserved).toLocaleString()}`; statusLine.appendChild(when); }
+  row2.appendChild(statusLine);
+  for (const value of [p.group, ...(p.tags ?? [])].filter(Boolean)) {
+    const chip = document.createElement('span'); chip.className = 'badge tag'; chip.textContent = value; row2.appendChild(chip);
   }
 
   return row2;

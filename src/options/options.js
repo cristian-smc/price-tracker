@@ -5,9 +5,9 @@
 
 import { MSG } from '../shared/constants.js';
 
-function send(msg) {
-  return chrome.runtime.sendMessage(msg);
-}
+import { sendMessage as send } from '../shared/messages.js';
+import { backupSummary } from '../shared/backup.js';
+import { companionProduct } from '../shared/product-state.js';
 
 // ── Notification permission UI ────────────────────────────────────────────
 
@@ -50,6 +50,7 @@ document.getElementById('btn-rate').addEventListener('click', () => {
 async function loadSettings() {
   const { settings } = await send({ type: MSG.GET_SETTINGS });
   if (!settings) return;
+  applyTheme(settings.theme);
 
   document.getElementById('notif-enabled').checked = settings.notificationsEnabled ?? true;
   document.getElementById('sound-enabled').checked = settings.soundEnabled ?? true;
@@ -65,6 +66,12 @@ async function loadSettings() {
   document.getElementById('gist-id').value = settings.gistId ?? '';
 }
 
+function applyTheme(theme) {
+  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+}
+document.getElementById('theme').addEventListener('change', (event) => applyTheme(event.target.value));
+
 function setSelectValue(id, value) {
   const sel = document.getElementById(id);
   const opt = Array.from(sel.options).find((o) => o.value === value);
@@ -73,7 +80,9 @@ function setSelectValue(id, value) {
 
 // ── Save settings ─────────────────────────────────────────────────────────
 
-document.getElementById('btn-save').addEventListener('click', async () => {
+document.getElementById('btn-save').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
   const data = {
     notificationsEnabled: document.getElementById('notif-enabled').checked,
     soundEnabled: document.getElementById('sound-enabled').checked,
@@ -93,18 +102,15 @@ document.getElementById('btn-save').addEventListener('click', async () => {
     showStatus('save-status', 'Saved!', 'ok');
   } catch (err) {
     showStatus('save-status', `Error: ${err.message}`, 'err');
-  }
+  } finally { button.disabled = false; }
 });
 
 // ── Export JSON ───────────────────────────────────────────────────────────
 
 document.getElementById('btn-export-json').addEventListener('click', async () => {
   try {
-    const [syncData, localData] = await Promise.all([
-      chrome.storage.sync.get(null),
-      chrome.storage.local.get(null),
-    ]);
-    const json = JSON.stringify({ sync: syncData, local: localData }, null, 2);
+    const { snapshot } = await send({ type: MSG.EXPORT_BACKUP });
+    const json = JSON.stringify(snapshot, null, 2);
     downloadBlob(json, `pricewatch-backup-${today()}.json`, 'application/json');
     showStatus('data-status', 'Export complete.', 'ok');
   } catch (err) {
@@ -145,16 +151,7 @@ document.getElementById('btn-export-csv').addEventListener('click', async () => 
 document.getElementById('btn-export-termux').addEventListener('click', async () => {
   try {
     const { products } = await send({ type: MSG.GET_PRODUCTS });
-    const list = Object.values(products ?? {}).map((p) => ({
-      id: p.id,
-      name: p.name,
-      url: p.canonicalUrl ?? p.url,
-      targetPrice: p.targetPrice ?? null,
-      currency: p.currency ?? 'USD',
-      enabled: p.enabled,
-      intervalMinutes: p.intervalMinutes,
-      priceSelector: p.selectors?.price ?? null,
-    }));
+    const list = Object.values(products ?? {}).map(companionProduct);
     const payload = { exported: new Date().toISOString(), products: list };
     downloadBlob(JSON.stringify(payload, null, 2), 'pricewatch.json', 'application/json');
     showStatus('data-status', `Exported ${list.length} product(s) for Termux companion.`, 'ok');
@@ -175,18 +172,15 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
   try {
     const text = await file.text();
     const data = JSON.parse(text);
-    if (typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid backup file format');
-    const syncData = data.sync ?? {};
-    const localData = data.local ?? data;
-    await Promise.all([
-      chrome.storage.sync.clear().then(() => chrome.storage.sync.set(syncData)),
-      chrome.storage.local.clear().then(() => chrome.storage.local.set(localData)),
-    ]);
-    showStatus('data-status', 'Import complete. Reload the extension to apply.', 'ok');
+    const summary = backupSummary(data);
+    const detail = summary.legacy ? 'Import legacy products and replace local history?' : 'Replace all current products, settings, and history?';
+    if (!confirm(`${detail}\nBackup contains ${summary.products} products and ${summary.history} histories. Export a backup first if you want to keep current data.`)) return;
+    await send({ type: MSG.IMPORT_BACKUP, data });
+    await loadSettings();
+    showStatus('data-status', 'Import complete. Tracking schedules updated.', 'ok');
   } catch (err) {
     showStatus('data-status', `Import failed: ${err.message}`, 'err');
-  }
-  e.target.value = '';
+  } finally { e.target.value = ''; }
 });
 
 // ── Bulk URL import ───────────────────────────────────────────────────────
@@ -198,7 +192,7 @@ document.getElementById('btn-bulk-import').addEventListener('click', async () =>
   const urls = raw.split('\n')
     .map((l) => l.trim())
     .filter((l) => {
-      try { new URL(l); return true; } catch { return false; }
+      try { return ['http:', 'https:'].includes(new URL(l).protocol); } catch { return false; }
     });
 
   if (urls.length === 0) {
@@ -206,13 +200,15 @@ document.getElementById('btn-bulk-import').addEventListener('click', async () =>
     return;
   }
 
+  const button = document.getElementById('btn-bulk-import');
+  button.disabled = true;
   try {
     const { added } = await send({ type: MSG.IMPORT_URLS, urls });
     document.getElementById('bulk-urls').value = '';
     showStatus('bulk-status', `Added ${added} product${added === 1 ? '' : 's'}.`, 'ok');
   } catch (err) {
     showStatus('bulk-status', `Import failed: ${err.message}`, 'err');
-  }
+  } finally { button.disabled = false; }
 });
 
 // ── Test mobile push ──────────────────────────────────────────────────────
@@ -244,7 +240,8 @@ document.getElementById('btn-test-push').addEventListener('click', async () => {
 document.getElementById('btn-clear').addEventListener('click', async () => {
   if (!confirm('This will delete all tracked products and history. Are you sure?')) return;
   try {
-    await Promise.all([chrome.storage.sync.clear(), chrome.storage.local.clear()]);
+    await send({ type: MSG.CLEAR_DATA });
+    await loadSettings();
     showStatus('data-status', 'All data cleared.', 'ok');
   } catch (err) {
     showStatus('data-status', `Error: ${err.message}`, 'err');
@@ -253,11 +250,15 @@ document.getElementById('btn-clear').addEventListener('click', async () => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
+const statusTimers = new Map();
 function showStatus(id, text, type) {
   const el = document.getElementById(id);
+  clearTimeout(statusTimers.get(id));
   el.textContent = text;
   el.className = `status-msg ${type}`;
-  setTimeout(() => { el.className = 'status-msg hidden'; }, 3000);
+  el.setAttribute('role', type === 'err' ? 'alert' : 'status');
+  el.setAttribute('aria-live', type === 'err' ? 'assertive' : 'polite');
+  if (type !== 'err') statusTimers.set(id, setTimeout(() => { el.className = 'status-msg hidden'; }, 5000));
 }
 
 function downloadBlob(content, filename, mimeType) {
@@ -294,23 +295,29 @@ document.getElementById('btn-gist-sync').addEventListener('click', async () => {
     showStatus('gist-status', 'Enter a GitHub token first.', 'err');
     return;
   }
-  // Save token first so the service worker can use it
-  await send({ type: MSG.UPDATE_SETTINGS, data: { gistToken: token } });
-  showStatus('gist-status', 'Syncing…', 'ok');
-  const result = await send({ type: MSG.GIST_SYNC });
-  if (result?.ok) {
+  const button = document.getElementById('btn-gist-sync');
+  button.disabled = true;
+  try {
+    await send({ type: MSG.UPDATE_SETTINGS, data: { gistToken: token } });
+    showStatus('gist-status', 'Syncing…', 'ok');
+    const result = await send({ type: MSG.GIST_SYNC });
+    if (!result.ok) throw new Error('Sync did not complete.');
     document.getElementById('gist-id').value = result.gistId ?? '';
     showStatus('gist-status', `Synced! Gist ID: ${result.gistId}`, 'ok');
-  } else {
-    showStatus('gist-status', `Sync failed: ${result?.error ?? 'unknown error'}`, 'err');
-  }
+  } catch (err) { showStatus('gist-status', `Sync failed: ${err.message}`, 'err'); }
+  finally { button.disabled = false; }
 });
 
 document.getElementById('btn-gist-clear').addEventListener('click', async () => {
-  document.getElementById('gist-token').value = '';
-  document.getElementById('gist-id').value = '';
-  await send({ type: MSG.UPDATE_SETTINGS, data: { gistToken: '', gistId: '' } });
-  showStatus('gist-status', 'Cleared.', 'ok');
+  const button = document.getElementById('btn-gist-clear');
+  button.disabled = true;
+  try {
+    await send({ type: MSG.UPDATE_SETTINGS, data: { gistToken: '', gistId: '' } });
+    document.getElementById('gist-token').value = '';
+    document.getElementById('gist-id').value = '';
+    showStatus('gist-status', 'Cleared.', 'ok');
+  } catch (err) { showStatus('gist-status', `Clear failed: ${err.message}`, 'err'); }
+  finally { button.disabled = false; }
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────

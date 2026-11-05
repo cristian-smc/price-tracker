@@ -73,6 +73,7 @@ export function debounce(fn, wait) {
 // ---------- Alarm name helpers ----------
 
 import { ALARM_PREFIX } from './constants.js';
+import { isComparablePrice } from './product-state.js';
 
 /** @param {string} productId @returns {string} */
 export function alarmName(productId) {
@@ -104,7 +105,7 @@ export function isStockEligible(product) {
  * @returns {boolean}
  */
 export function isBelowTarget(product) {
-  return product.currentPrice !== null && product.targetPrice !== null &&
+  return isComparablePrice(product) && product.targetPrice != null &&
     product.currentPrice < product.targetPrice && isStockEligible(product);
 }
 
